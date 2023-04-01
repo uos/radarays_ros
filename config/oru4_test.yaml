@@ -22,10 +22,10 @@ materials:
     diffuse: 0.0
     specular: 1.0
   # window glass
-  - velocity: 0.0
-    ambient: 0.5
+  - velocity: 0.03
+    ambient: 1.0
     diffuse: 0.0
-    specular: 3000.0
+    specular: 100.0
   # metal
   - velocity: 0.0
     ambient: 1.0

@@ -9,29 +9,29 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <radarays_ros/RadarModelConfig.h>
+#include <rmagine_ros/RadarModelConfig.h>
 
 #include <sensor_msgs/PointCloud.h>
 
-#include <radarays_ros/radar_types.h>
-#include <radarays_ros/radar_algorithms.h>
-#include <radarays_ros/radar_math.h>
+#include <rmagine_ros/radar_types.h>
+#include <rmagine_ros/radar_algorithms.h>
+#include <rmagine_ros/radar_math.h>
 
 
-#include <radarays_ros/RadarParams.h>
+#include <rmagine_ros/RadarParams.h>
 
 #include <actionlib/server/simple_action_server.h>
-#include <radarays_ros/GenRadarImageAction.h>
+#include <rmagine_ros/GenRadarImageAction.h>
 
 
-#include <radarays_ros/GetRadarParams.h>
-#include <radarays_ros/image_algorithms.h>
+#include <rmagine_ros/GetRadarParams.h>
+#include <rmagine_ros/image_algorithms.h>
 
 
 #include <opencv2/highgui.hpp>
 
 
-using namespace radarays_ros;
+using namespace rmagine_ros;
 
 namespace rm = rmagine;
 
@@ -73,6 +73,9 @@ static RadarParams default_params()
     ret.model = default_params_model();
     return ret;
 }
+
+
+rm::Transform Tsm_last = rm::Transform::Identity();
 
 RadarParams params = default_params();
 
@@ -120,7 +123,15 @@ int signal_denoising_mb_mode;
 // Ambient Noise
 // bool ambient_noise = false;
 int ambient_noise = 0;
+
+float ambient_noise_at_signal_0 = 0.3;
+float ambient_noise_at_signal_1 = 0.03;
+float ambient_noise_energy_max = 0.5;
+float ambient_noise_energy_min = 0.1;
+float ambient_noise_energy_loss = 0.05;
+
 float ambient_noise_uniform_max = 0.8;
+
 
 // Particle Noise
 bool particle_noise = false;
@@ -231,7 +242,7 @@ void loadParameters()
  * @param level 
  */
 void modelCB(
-    radarays_ros::RadarModelConfig &config,
+    rmagine_ros::RadarModelConfig &config,
     uint32_t level) 
 {
     ROS_INFO("Changing Model");
@@ -285,7 +296,14 @@ void modelCB(
     energy_max = config.energy_max;
 
     ambient_noise = config.ambient_noise;
+    ambient_noise_at_signal_0 = config.ambient_noise_at_signal_0;
+    ambient_noise_at_signal_1 = config.ambient_noise_at_signal_1;
     ambient_noise_uniform_max = config.ambient_noise_uniform_max;
+    ambient_noise_energy_max = config.ambient_noise_energy_max;
+    ambient_noise_energy_min = config.ambient_noise_energy_min;
+    ambient_noise_energy_loss = config.ambient_noise_energy_loss;
+    
+    
 
     particle_noise = config.particle_noise;
     particle_noise_exp_mu = config.particle_noise_exp_mu;
@@ -623,11 +641,39 @@ void apply_perlin_noise(
     signal += perlin_noise_amped;
 }
 
+std::optional<rm::Transform> getTsm()
+{
+    rm::Transform Tsm;
+    // Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
+
+    // Tsm.R = rm::EulerAngles{0.0149786, 0.00858233, 3.04591};
+    // Tsm.t = rm::Vector3{0.863185,-1.164,1.49406};
+
+    try {
+        geometry_msgs::TransformStamped Tsm_ros = tf_buffer->lookupTransform(
+            map_frame,
+            sensor_frame,
+            ros::Time(0)
+        );
+
+        Tsm.t.x = Tsm_ros.transform.translation.x;
+        Tsm.t.y = Tsm_ros.transform.translation.y;
+        Tsm.t.z = Tsm_ros.transform.translation.z;
+        Tsm.R.x = Tsm_ros.transform.rotation.x;
+        Tsm.R.y = Tsm_ros.transform.rotation.y;
+        Tsm.R.z = Tsm_ros.transform.rotation.z;
+        Tsm.R.w = Tsm_ros.transform.rotation.w;
+
+    } catch(tf2::TransformException ex) {
+        ROS_WARN_STREAM("TF-Error: " << ex.what());
+        return {};
+    }
+
+    return Tsm;
+}
+
 void updateImageBeamNew()
 {
-    
-
-
     float wave_energy_threshold = 0.001;
 
     std::cout << "Reset Buffers" << std::endl;
@@ -636,43 +682,6 @@ void updateImageBeamNew()
     bool static_tf = true;
 
     
-
-    rm::Transform Tsm;
-
-    // Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
-
-    Tsm.R = rm::EulerAngles{0.0149786, 0.00858233, 3.04591};
-    Tsm.t = rm::Vector3{0.863185,-1.164,1.49406};
-
-    // try {
-    //     geometry_msgs::TransformStamped Tsm_ros = tf_buffer->lookupTransform(
-    //         map_frame,
-    //         sensor_frame,
-    //         ros::Time(0)
-    //     );
-
-    //     Tsm.t.x = Tsm_ros.transform.translation.x;
-    //     Tsm.t.y = Tsm_ros.transform.translation.y;
-    //     Tsm.t.z = Tsm_ros.transform.translation.z;
-    //     Tsm.R.x = Tsm_ros.transform.rotation.x;
-    //     Tsm.R.y = Tsm_ros.transform.rotation.y;
-    //     Tsm.R.z = Tsm_ros.transform.rotation.z;
-    //     Tsm.R.w = Tsm_ros.transform.rotation.w;
-
-    // } catch(tf2::TransformException ex) {
-    //     ROS_WARN_STREAM("TF-Error: " << ex.what());
-    //     return;
-    // }
-
-    rm::Memory<rm::Transform> Tbms(1);
-    Tbms[0] = Tsm;
-
-    // std::cout << "Tsm: " << Tsm << std::endl;
-
-    // rm::StopWatch sw;
-
-    // sw();
-    // init waves
 
     rm::StopWatch sw;
     double el;
@@ -689,22 +698,22 @@ void updateImageBeamNew()
 
     int n_angles = polar_image.cols;
 
-    cv::Mat_<float> perlin_noise_image(cv::Size(n_angles, n_cells));
-    fill_perlin_noise(perlin_noise_image, 0.1);
+    // cv::Mat_<float> perlin_noise_image(cv::Size(n_angles, n_cells));
+    // fill_perlin_noise(perlin_noise_image, 0.1);
 
     float noise_energy_max = 80.0;
     float noise_energy_min = 5.0;
     float energy_loss = 0.05;
 
 
-    // #pragma omp parallel for
+    // std::cout << "Simulate" << std::endl;
     for(size_t angle_id=0; angle_id < n_angles; angle_id++)
     {   
         std::vector<Signal> signals;
-        // std::cout << "Init angle " << angle_id << std::endl;
         wave.ray.orig     = radar_model.getOrigin(0, angle_id);
         wave.ray.dir      = radar_model.getDirection(0, angle_id);
         
+        // std::cout << "- Angle: " << angle_id << std::endl;
         std::vector<DirectedWave> waves = sample_cone(
             wave, 
             params.model.beam_width,
@@ -712,21 +721,40 @@ void updateImageBeamNew()
             beam_sample_dist, 
             beam_sample_dist_normal_p_in_cone);
 
-        for(size_t pass_id=0; ;pass_id++)
+        // std::cout << "-- getTsm" << std::endl;
+        auto Tsm_opt = getTsm();
+
+        rm::Transform Tsm;
+        if(Tsm_opt)
+        {
+            Tsm = *Tsm_opt;
+            Tsm_last = Tsm;
+        } else {
+            Tsm = Tsm_last;
+        }
+        
+        rm::Memory<rm::Transform> Tbms(1);
+        Tbms[0] = Tsm;
+
+
+
+        for(size_t pass_id=0; pass_id < params.model.n_reflections; pass_id++)
         {
             // std::cout << "Pass " << pass_id << std::endl; 
             rm::OnDnModel model = make_model(waves);
 
             // raycast
             sim->setModel(model);
-
+            
             // results in sensor frame!
             ResT results;
             results.hits.resize(model.size());
             results.ranges.resize(model.size());
             results.normals.resize(model.size());
             results.object_ids.resize(model.size());
+            // std::cout << "SIM" << std::endl;
             sim->simulate(Tbms, results);
+            // std::cout << "done" << std::endl;
 
             // Move rays
             for(size_t i=0; i < waves.size(); i++)
@@ -736,11 +764,6 @@ void updateImageBeamNew()
                 DirectedWave wave = waves[i];
                 wave.moveInplace(wave_range);
                 waves[i] = wave;
-            }
-
-            if(pass_id >= params.model.n_reflections)
-            {
-                break;
             }
 
             // reflect / refract / absorb / return
@@ -754,7 +777,6 @@ void updateImageBeamNew()
                 const unsigned int obj_id = results.object_ids[i];
                 
 
-            
                 if(obj_id > 10000)
                 {
                     continue;
@@ -859,24 +881,9 @@ void updateImageBeamNew()
 
                                 signal_air.time = incidence.time + time_to_sensor;
                                 signal_air.strength = return_energy_air;
-
-                                // share energy
-
-                                // if(pass_id == 1)
-                                // {
-                                    // std::cout << "Signal pass " << pass_id << std::endl;
-                                    // std::cout << "- Air: " << signal_air.strength << ", ang: " << angle_between_reflection_and_sensor_dir << std::endl; 
-                                    // std::cout << "- Path: " << signal_path.strength << ", ang: " << incidence_angle << std::endl;
-                                    // if(signal_air.strength > signal_path.strength)
-                                    // {
-                                    //     std::cout << "Air signal > Path signal" << std::endl;
-                                    // }
-                                // }
                                 
                                 signals.push_back(signal_air);
                             }
-
-                            // signals.push_back(signal_path);
                         }
 
 
@@ -890,39 +897,39 @@ void updateImageBeamNew()
                 {
                     waves_new.push_back(refraction);
 
-                    if(refraction.material_id == material_id_air)
-                    {
-                        rm::Vector dir_sensor = refraction.ray.orig;
+                    // if(refraction.material_id == material_id_air)
+                    // {
+                    //     rm::Vector dir_sensor = refraction.ray.orig;
 
-                        // multipath only when direction to sensor 
-                        // is similar to beam direction (minus)
-
-
-                        // distance_to_sensor in [m]
-                        const double distance_to_sensor = dir_sensor.l2norm();
-                        dir_sensor.normalizeInplace();
+                    //     // multipath only when direction to sensor 
+                    //     // is similar to beam direction (minus)
 
 
-                        // refraction.velocity in [nm / s]
-                        const double time_to_sensor = distance_to_sensor / refraction.velocity;
-                        double angle_diff = get_incidence_angle(refraction.ray.dir, dir_sensor);
+                    //     // distance_to_sensor in [m]
+                    //     const double distance_to_sensor = dir_sensor.l2norm();
+                    //     dir_sensor.normalizeInplace();
 
-                        auto material = params.materials.data[incidence.material_id];
 
-                        double energy_back = back_reflection_shader(
-                            angle_diff,
-                            refraction.energy,
-                            material.ambient,
-                            material.diffuse,
-                            material.specular
-                        );
+                    //     // refraction.velocity in [nm / s]
+                    //     const double time_to_sensor = distance_to_sensor / refraction.velocity;
+                    //     double angle_diff = get_incidence_angle(refraction.ray.dir, dir_sensor);
 
-                        // signal to receiver through air
-                        Signal sig;
-                        sig.time = time_to_sensor + refraction.time;
-                        sig.strength = energy_back;
-                        // signals.push_back(sig);
-                    }
+                    //     auto material = params.materials.data[incidence.material_id];
+
+                    //     double energy_back = back_reflection_shader(
+                    //         angle_diff,
+                    //         refraction.energy,
+                    //         material.ambient,
+                    //         material.diffuse,
+                    //         material.specular
+                    //     );
+
+                    //     // signal to receiver through air
+                    //     Signal sig;
+                    //     sig.time = time_to_sensor + refraction.time;
+                    //     sig.strength = energy_back;
+                    //     // signals.push_back(sig);
+                    // }
                 }
             }
 
@@ -1056,8 +1063,6 @@ void updateImageBeamNew()
                 // slice.at<float>(cell, 0) += signal.strength * pow(
                 //     signal_dist, 1.0);
 
-                
-
                 if(signal_denoising > 0)
                 {
                     // triangular signal denoising
@@ -1145,16 +1150,14 @@ void updateImageBeamNew()
             
             for(size_t i=0; i<slice.rows; i++)
             {
-                float signal = slice.at<float>(i);
+                float signal = slice.at<float>(i) * energy_max;
 
                 double p;
 
-                if(ambient_noise == 1)
+                if(ambient_noise == 1) // UNIFORM
                 {
                     p = dist_uni(gen);
-                }
-
-                if(ambient_noise == 2)
+                } else if(ambient_noise == 2) // PERLIN
                 {
                     double p_perlin1 = perlin_noise(
                         random_begin + static_cast<double>(i) * scale, 
@@ -1176,11 +1179,10 @@ void updateImageBeamNew()
                 float signal_max = max_val;
                 float signal_amp = signal_max - signal_min;
 
-
                 float signal_ = 1.0 - ((signal - signal_min) / signal_amp);
 
-                float noise_at_0 = signal_amp * 0.3;
-                float noise_at_1 = signal_amp * 0.3;
+                float noise_at_0 = signal_amp * ambient_noise_at_signal_0;
+                float noise_at_1 = signal_amp * ambient_noise_at_signal_1;
 
                 float signal__ = std::pow(signal_, 4.0);
 
@@ -1188,42 +1190,27 @@ void updateImageBeamNew()
 
                 // noise_amp * p * signal_max;
                 
-                float noise_energy_max = signal_max * 0.5;
-                float noise_energy_min = signal_max * 0.1;
-                float energy_loss = 0.05;
+                float noise_energy_max = signal_max * ambient_noise_energy_max;
+                float noise_energy_min = signal_max * ambient_noise_energy_min;
+                float energy_loss = ambient_noise_energy_loss;
 
                 float y_noise = noise_amp * p;
 
                 float x = (static_cast<float>(i) + 0.5) * resolution;
 
-                y_noise = y_noise + (noise_energy_max - noise_energy_min) / exp(energy_loss * x) + noise_energy_min;
+                y_noise = y_noise + (noise_energy_max - noise_energy_min) * exp(-energy_loss * x) + noise_energy_min;
                 y_noise = abs(y_noise);
 
                 slice.at<float>(i) = signal + y_noise;
-
             }
         }
         
         float max_signal = 120.0;
-        slice *= max_signal / (max_val);
+        slice *= max_signal / max_val;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
+        ros::spinOnce();
     }
-
-    // cv::Mat perlin_noise_layer(cv::Size(n_angles, n_cells), CV_8UC1);
-
-    
-
-    
-    // sw();
-    
-    
-
-    // el = sw();
-    // std::cout << "Perlin noise in " << el << "s" << std::endl;
-
-    // cv::imshow("bla", perlin_noise_layer);
-    // cv::waitKey(0);
 }
 
 void updateImage()
@@ -1242,11 +1229,11 @@ void updateImage()
     }
 }
 
-std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;
-radarays_ros::GenRadarImageFeedback feedback_;
-radarays_ros::GenRadarImageResult result_;
+std::shared_ptr<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> > as_;
+rmagine_ros::GenRadarImageFeedback feedback_;
+rmagine_ros::GenRadarImageResult result_;
 
-void executeCB(const radarays_ros::GenRadarImageGoalConstPtr &goal)
+void executeCB(const rmagine_ros::GenRadarImageGoalConstPtr &goal)
 {
     std::cout << "CALL ACTION" << std::endl;
 
@@ -1268,8 +1255,8 @@ void executeCB(const radarays_ros::GenRadarImageGoalConstPtr &goal)
     as_->setSucceeded(result_);
 }
 
-bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
-         radarays_ros::GetRadarParams::Response &res)
+bool getRadarParamsCB(rmagine_ros::GetRadarParams::Request  &req,
+         rmagine_ros::GetRadarParams::Response &res)
 {
 //   res.sum = req.a + req.b;
 //   ROS_INFO("request: x=%ld, y=%ld", (long int)req.a, (long int)req.b);
@@ -1331,13 +1318,13 @@ int main_action_server(int argc, char** argv)
     
     // Start action server
     std::string action_name = "gen_radar_image";
-    as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
+    as_ = std::make_shared<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> >(
         *nh_p, action_name, executeCB, false
     );
 
     as_->start();
 
-    ros::Rate r(10);
+    ros::Rate r(100);
     ros::Time tp = ros::Time::now();
 
     while(ros::ok())
@@ -1351,7 +1338,7 @@ int main_action_server(int argc, char** argv)
             std::cout << "Jump back in time detected" << std::endl;
             ros::Duration(2.0).sleep();
             as_->shutdown();
-            as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
+            as_ = std::make_shared<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> >(
                 *nh_p, action_name, executeCB, false
             );
             as_->start();
@@ -1403,8 +1390,6 @@ int main_publisher(int argc, char** argv)
     radar_model.phi.inc = 1.0;
     radar_model.phi.min = 0.0;
     radar_model.phi.size = 1;
-    
-
 
     // setting up dynamic reconfigure
     dynamic_reconfigure::Server<RadarModelConfig> server;
@@ -1413,8 +1398,8 @@ int main_publisher(int argc, char** argv)
     server.setCallback(f);
 
     // setting up tf
-    // tf_buffer = std::make_shared<tf2_ros::Buffer>();
-    // tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
+    tf_buffer = std::make_shared<tf2_ros::Buffer>();
+    tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
 
     // image transport
     image_transport::ImageTransport it(nh);
@@ -1430,7 +1415,7 @@ int main_publisher(int argc, char** argv)
     // - load and set map
     polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
 
-    ros::Rate r(5);
+    ros::Rate r(100);
 
     while(nh.ok())
     {

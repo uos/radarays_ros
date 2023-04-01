@@ -1,5 +1,5 @@
-#ifndef RADARAYS_ROS_RADAR_ALGORITHMS_H
-#define RADARAYS_ROS_RADAR_ALGORITHMS_H
+#ifndef RMAGINE_ROS_RADAR_ALGORITHMS_H
+#define RMAGINE_ROS_RADAR_ALGORITHMS_H
 
 #include <vector>
 #include <random>
@@ -10,7 +10,7 @@
 #include <rmagine/types/Memory.hpp>
 
 
-namespace radarays_ros
+namespace rmagine_ros
 {
 
 inline double angle_between(
@@ -167,8 +167,8 @@ inline float maxwell_boltzmann_pdf(
 inline float back_reflection_shader(
     float incidence_angle, 
     float energy,
-    float ambient,
-    float diffuse, 
+    float diffuse,
+    float specular_fac, 
     float specular_exp)
 {
     // Diffuse: Lambertian model - NdotL
@@ -176,18 +176,11 @@ inline float back_reflection_shader(
     // incidence_angle -> 0 - pi/2
     // I_diffuse 1 -> 0
     float IdotR = cos(incidence_angle);
-
-    float I_ambient = 1.0;
-    float I_diffuse = IdotR;
-
+    float I_diffuse = 1.0;
     float I_specular = pow(IdotR, specular_exp);
 
-    float spec_factor = 1.0 - ambient - diffuse;
-
     // polynom
-    float I_total = ambient * I_ambient + diffuse * I_diffuse + spec_factor * I_specular;
-
-    // std::cout << ambient << " * " << I_ambient << " + " << diffuse << " * " << I_diffuse << " + " << spec_factor << " * " << I_specular << std::endl;
+    float I_total = diffuse * I_diffuse + specular_fac * I_specular;
 
     return I_total * energy;
 }
@@ -339,6 +332,6 @@ inline std::vector<float> make_denoiser_maxwell_boltzmann(
 
 
 
-} // namespace radarays_ros
+} // namespace rmagine_ros
 
-#endif // RADARAYS_ROS_RADAR_ALGORITHMS_H
+#endif // RMAGINE_ROS_RADAR_ALGORITHMS_H

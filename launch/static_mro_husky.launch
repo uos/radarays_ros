@@ -1,0 +1,32 @@
+<?xml version="5.0"?>
+<launch>
+
+<!-- <arg name="meshfile" default="/home/amock/blender_projects/oru/oru3.dae" /> -->
+<arg name="meshfile" default="/home/amock/blender_projects/oru/oru4.dae" />
+
+# static tf + robot model
+<include file="$(find mro_husky_description)/launch/mro_husky_description.launch">
+</include>
+
+# odom -> base_link
+<node name="base_to_odom_tf" pkg="tf_tools" type="static_transform_publisher" output="screen">
+    <param name="rate" value="50.0" />
+    <param name="child_frame" value="base_link" />
+    <param name="parent_frame" value="odom" />
+    <rosparam param="transform">[1.0, 1.5, 0, 0, 0, 0]</rosparam>
+</node>
+
+# map -> odom
+<node name="odom_to_map_tf" pkg="tf_tools" type="static_transform_publisher" output="screen">
+    <param name="rate" value="50.0" />
+    <param name="child_frame" value="odom" />
+    <param name="parent_frame" value="map" />
+    <rosparam param="transform">[0, 0, 0.2, 0, 0, 0]</rosparam>
+</node>
+
+# mesh
+<include file="$(find radarays_ros)/launch/mesh_publisher.launch">
+    <arg name="meshfile" value="$(arg meshfile)" />
+</include>
+
+</launch>

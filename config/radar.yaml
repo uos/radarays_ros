@@ -1,0 +1,16 @@
+
+velocities: [
+    0.3,    # 0: air
+    0.033,  # 1: water
+    0.01,   # 2: water sea
+    0.16,   # 3: ice
+    0.15,   # 4: dry sand
+    0.06,   # 5: saturated sand
+    0.12,   # 6: limestone
+    0.09,   # 7: shales
+    0.07,   # 8: silts
+    0.06,   # 9: clays
+    0.13,   # 10: granite
+    0.13,   # 11: anhydrites,
+    0.0     # 12: zero]
+  ]

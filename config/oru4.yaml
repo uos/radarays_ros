@@ -1,0 +1,65 @@
+
+# velocities in materials
+# if air is 0.3 and material is 0 -> all of the energy is reflected
+# modeling two things:
+# - refraction direction
+# - how much percentage is transmitted or reflected? (fresnel)
+velocities: [
+  0.3,    # 0: air
+  0.001,   # 1: wall stone      # unsure
+  0.002,    # 2: shelf wood      # unsure
+  0.05,    # 3: window glass    # unsure 
+  0.0,    # 4: metal           # unsure
+  0.0     # 5: test
+]
+
+# 
+ambient: [
+  0.5,   # 0: air
+  0.6,   # 1: wall stone
+  0.6,   # 2: shelf wood
+  0.01,  # 3: window glass 
+  1.0,   # 4: metal       
+  1.0    # 5: test
+]
+
+diffuse: [
+  0.1,   # 0: air
+  0.3,   # 1: wall stone
+  0.3,   # 2: shelf wood   
+  0.04,   # 3: window glass
+  1.0,   # 4: metal   
+  0.0    # 5: test
+]
+
+specular: [
+  0.1,   # 0: air
+  30.0,   # 1: wall stone
+  70.0,   # 15: shelf wood 
+  2000.0,   # 14: window glass 
+  2000.0,   # 13: metal 
+  0.0    # 12: test
+]
+
+material_id_air: 0
+
+object_materials: [
+  1, # 0: HallwayGround-mesh
+  3, # 1: DoorHallway1Glass-mesh
+  1, # 2: HallwayWall-mesh
+  2, # 3: DoorT1203Wood-mesh
+  3, # 4: DoorT1203Glass-mesh
+  3, # 5: DoorT1210Glass-mesh
+  2, # 6: DoorT1210Wood-mesh
+  2, # 7: DoorFikaWood-mesh
+  3, # 8: DoorFikaGlass-mesh
+  3, # 9: DoorLabGlass-mesh
+  2, # 10: Bookshelf2-mesh
+  2, # 11: Bookshelf-mesh
+  4, # 12: Locker-mesh
+  2, # 13: Workbench2-mesh
+  4, # 14: Locker2-mesh
+  2, # 15: Workbench-mesh
+  4, # 16: Trash-mesh
+  1  # 17: Building-mesh
+]

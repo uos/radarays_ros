@@ -1,0 +1,3 @@
+float32 beam_width
+uint32 n_samples
+uint32 n_reflections

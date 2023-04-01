@@ -9,29 +9,29 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <rmagine_ros/RadarModelConfig.h>
+#include <radarays_ros/RadarModelConfig.h>
 
 #include <sensor_msgs/PointCloud.h>
 
-#include <rmagine_ros/radar_types.h>
-#include <rmagine_ros/radar_algorithms.h>
-#include <rmagine_ros/radar_math.h>
+#include <radarays_ros/radar_types.h>
+#include <radarays_ros/radar_algorithms.h>
+#include <radarays_ros/radar_math.h>
 
 
-#include <rmagine_ros/RadarParams.h>
+#include <radarays_ros/RadarParams.h>
 
 #include <actionlib/server/simple_action_server.h>
-#include <rmagine_ros/GenRadarImageAction.h>
+#include <radarays_ros/GenRadarImageAction.h>
 
 
-#include <rmagine_ros/GetRadarParams.h>
-#include <rmagine_ros/image_algorithms.h>
+#include <radarays_ros/GetRadarParams.h>
+#include <radarays_ros/image_algorithms.h>
 
 
 #include <opencv2/highgui.hpp>
 
 
-using namespace rmagine_ros;
+using namespace radarays_ros;
 
 namespace rm = rmagine;
 
@@ -242,7 +242,7 @@ void loadParameters()
  * @param level 
  */
 void modelCB(
-    rmagine_ros::RadarModelConfig &config,
+    radarays_ros::RadarModelConfig &config,
     uint32_t level) 
 {
     ROS_INFO("Changing Model");
@@ -1229,11 +1229,11 @@ void updateImage()
     }
 }
 
-std::shared_ptr<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> > as_;
-rmagine_ros::GenRadarImageFeedback feedback_;
-rmagine_ros::GenRadarImageResult result_;
+std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;
+radarays_ros::GenRadarImageFeedback feedback_;
+radarays_ros::GenRadarImageResult result_;
 
-void executeCB(const rmagine_ros::GenRadarImageGoalConstPtr &goal)
+void executeCB(const radarays_ros::GenRadarImageGoalConstPtr &goal)
 {
     std::cout << "CALL ACTION" << std::endl;
 
@@ -1255,8 +1255,8 @@ void executeCB(const rmagine_ros::GenRadarImageGoalConstPtr &goal)
     as_->setSucceeded(result_);
 }
 
-bool getRadarParamsCB(rmagine_ros::GetRadarParams::Request  &req,
-         rmagine_ros::GetRadarParams::Response &res)
+bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
+         radarays_ros::GetRadarParams::Response &res)
 {
 //   res.sum = req.a + req.b;
 //   ROS_INFO("request: x=%ld, y=%ld", (long int)req.a, (long int)req.b);
@@ -1318,7 +1318,7 @@ int main_action_server(int argc, char** argv)
     
     // Start action server
     std::string action_name = "gen_radar_image";
-    as_ = std::make_shared<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> >(
+    as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
         *nh_p, action_name, executeCB, false
     );
 
@@ -1338,7 +1338,7 @@ int main_action_server(int argc, char** argv)
             std::cout << "Jump back in time detected" << std::endl;
             ros::Duration(2.0).sleep();
             as_->shutdown();
-            as_ = std::make_shared<actionlib::SimpleActionServer<rmagine_ros::GenRadarImageAction> >(
+            as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
                 *nh_p, action_name, executeCB, false
             );
             as_->start();

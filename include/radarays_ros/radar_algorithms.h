@@ -1,5 +1,5 @@
-#ifndef RMAGINE_ROS_RADAR_ALGORITHMS_H
-#define RMAGINE_ROS_RADAR_ALGORITHMS_H
+#ifndef RADARAYS_ROS_RADAR_ALGORITHMS_H
+#define RADARAYS_ROS_RADAR_ALGORITHMS_H
 
 #include <vector>
 #include <random>
@@ -10,7 +10,7 @@
 #include <rmagine/types/Memory.hpp>
 
 
-namespace rmagine_ros
+namespace radarays_ros
 {
 
 inline double angle_between(
@@ -332,6 +332,6 @@ inline std::vector<float> make_denoiser_maxwell_boltzmann(
 
 
 
-} // namespace rmagine_ros
+} // namespace radarays_ros
 
-#endif // RMAGINE_ROS_RADAR_ALGORITHMS_H
+#endif // RADARAYS_ROS_RADAR_ALGORITHMS_H

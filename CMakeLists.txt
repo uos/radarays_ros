@@ -11,7 +11,6 @@ find_package(catkin REQUIRED COMPONENTS
     tf2_ros
     dynamic_reconfigure
     mesh_msgs
-    rosmath
     image_transport
     cv_bridge
     actionlib_msgs

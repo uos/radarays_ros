@@ -2,7 +2,7 @@
 <launch>
 
 <arg name="rate" default="0.5" />
-<arg name="meshfile" default="/media/amock/SanDiskAlex/datasets/micp_mulran/KAIST/range_mcl_mesh_mulran_kaist.ply" />
+<arg name="meshfile" default="/media/amock/SanDiskAlex/datasets/mulran/KAIST/range_mcl_mesh_mulran_kaist_v3.ply" />
 <arg name="bagfile" default="/media/amock/SanDiskAlex/datasets/micp_mulran/KAIST/mulran_kaist02_micp.bag" />
 
 
@@ -14,5 +14,7 @@
     <param name="sensor_frame" type="string" value="radar_polar" />
     <rosparam command="load" file="$(find radarays_ros)/config/mulran_kaist02.yaml" />
 </node>
+
+<node name="dynamic_reconfigure_load" pkg="dynamic_reconfigure" type="dynparam" args="load /radar_simulator $(find radarays_ros)/cfg/mulran_kaist_dyncfg.yaml" />
 
 </launch>

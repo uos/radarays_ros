@@ -6,7 +6,8 @@
 <!-- <arg name="meshfile" default="/home/amock/blender_projects/oru/oru3.dae" /> -->
 <!-- <arg name="meshfile" default="/home/amock/blender_projects/oru/oru4.dae" /> -->
 <!-- <arg name="meshfile" default="/home/amock/datasets/oru/radar-longterm/recon_bad.dae" /> -->
-<arg name="meshfile" default="/home/amock/hilti_uzh_tracking_area/hilti_uzh_tracking_area_deskewed.ply" />
+<!-- <arg name="meshfile" default="/home/amock/hilti_uzh_tracking_area/hilti_uzh_tracking_area_deskewed.ply" /> -->
+<arg name="meshfile" default="/home/amock/datasets/mulran/KAIST/range_mcl_mesh_mulran_kaist_v3.ply"
 
 
 <node pkg="radarays_ros" type="mesh_publisher" name="mesh_publisher" output="screen">

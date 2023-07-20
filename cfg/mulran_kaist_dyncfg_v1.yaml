@@ -1,7 +1,7 @@
 !!python/object/new:dynamic_reconfigure.encoding.Config
 dictitems:
   ambient_noise: 2
-  ambient_noise_at_signal_0: 0.3
+  ambient_noise_at_signal_0: 0.1
   ambient_noise_at_signal_1: 0.03
   ambient_noise_energy_loss: 0.05
   ambient_noise_energy_max: 0.08
@@ -10,12 +10,12 @@ dictitems:
   beam_sample_dist: 2
   beam_sample_dist_normal_p_in_cone: 0.8
   beam_width: 15.0
-  energy_max: 0.65
+  energy_max: 0.72
   energy_min: 0.0
   groups: !!python/object/new:dynamic_reconfigure.encoding.Config
     dictitems:
       ambient_noise: 2
-      ambient_noise_at_signal_0: 0.3
+      ambient_noise_at_signal_0: 0.1
       ambient_noise_at_signal_1: 0.03
       ambient_noise_energy_loss: 0.05
       ambient_noise_energy_max: 0.08
@@ -24,7 +24,7 @@ dictitems:
       beam_sample_dist: 2
       beam_sample_dist_normal_p_in_cone: 0.8
       beam_width: 15.0
-      energy_max: 0.65
+      energy_max: 0.72
       energy_min: 0.0
       groups: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
@@ -32,7 +32,7 @@ dictitems:
       multipath_threshold: 0.5
       n_cells: 3424
       n_reflections: 4
-      n_samples: 10
+      n_samples: 20
       name: Default
       parameters: !!python/object/new:dynamic_reconfigure.encoding.Config
         state: []
@@ -51,7 +51,7 @@ dictitems:
       signal_denoising_mb_mode: 0.4
       signal_denoising_mb_width: 50
       signal_denoising_triangular_mode: 0.35
-      signal_denoising_triangular_width: 50
+      signal_denoising_triangular_width: 35
       state: true
       type: ''
       z_offset: 0.0
@@ -59,7 +59,7 @@ dictitems:
   multipath_threshold: 0.5
   n_cells: 3424
   n_reflections: 4
-  n_samples: 10
+  n_samples: 20
   particle_noise: true
   particle_noise_exp_mu: 15.0
   range_max: 600.0
@@ -74,6 +74,6 @@ dictitems:
   signal_denoising_mb_mode: 0.4
   signal_denoising_mb_width: 50
   signal_denoising_triangular_mode: 0.35
-  signal_denoising_triangular_width: 50
+  signal_denoising_triangular_width: 35
   z_offset: 0.0
 state: []

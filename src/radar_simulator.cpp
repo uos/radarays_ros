@@ -41,6 +41,8 @@ std::string sensor_frame = "navtech";
 
 cv::Mat polar_image;
 
+bool image_resize_required = false;
+
 std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
@@ -76,6 +78,9 @@ static RadarParams default_params()
 
 
 rm::Transform Tsm_last = rm::Transform::Identity();
+bool has_last;
+ros::Time Tsm_stamp_last;
+ros::Time stamp_last;
 
 RadarParams params = default_params();
 
@@ -139,6 +144,8 @@ float particle_noise_exp_mu = 1.0;
 
 bool record_multi_reflection = true;
 bool record_multi_path = true;
+
+bool include_motion = true;
 
 std::shared_ptr<ros::NodeHandle> nh_p;
 
@@ -247,7 +254,7 @@ void modelCB(
 {
     ROS_INFO("Changing Model");
 
-    bool image_resize_required = false;
+    
 
     // z_offset
     auto T = rm::Transform::Identity();
@@ -266,6 +273,8 @@ void modelCB(
         // Image update needed
         image_resize_required = true;
         n_cells = config.n_cells;
+    } else {
+        image_resize_required = false;
     }
 
     params.model.n_samples = config.n_samples;
@@ -316,6 +325,8 @@ void modelCB(
     multipath_threshold = config.multipath_threshold;
     record_multi_reflection = config.record_multi_reflection;
     record_multi_path = config.record_multi_path;
+
+    include_motion = config.include_motion;
 }
 
 void updateImageAmbientNoise()
@@ -672,11 +683,81 @@ std::optional<rm::Transform> getTsm()
     return Tsm;
 }
 
+// updating global vars:
+// - Tsm_last = Tsm;
+// - Tsm_stamp_last = Tsm_stamp;
+// - stamp_last = ros::Time::now();
+// - has_last = true;
+bool updateTsm()
+{
+    std::optional<rm::Transform> Tsm_opt;
+    ros::Time Tsm_stamp;
+
+    try {
+        rm::Transform Tsm;
+        geometry_msgs::TransformStamped Tsm_ros = tf_buffer->lookupTransform(
+            map_frame,
+            sensor_frame,
+            ros::Time(0)
+        );
+
+        Tsm.t.x = Tsm_ros.transform.translation.x;
+        Tsm.t.y = Tsm_ros.transform.translation.y;
+        Tsm.t.z = Tsm_ros.transform.translation.z;
+        Tsm.R.x = Tsm_ros.transform.rotation.x;
+        Tsm.R.y = Tsm_ros.transform.rotation.y;
+        Tsm.R.z = Tsm_ros.transform.rotation.z;
+        Tsm.R.w = Tsm_ros.transform.rotation.w;
+
+        Tsm_opt = Tsm;
+        Tsm_stamp = Tsm_ros.header.stamp;
+    } catch(tf2::TransformException ex) {
+        ROS_WARN_STREAM("TF-Error: " << ex.what());
+    }
+    
+    if(!Tsm_opt && !has_last)
+    {
+        // cannot simulate from old because nothing exists yet
+        std::cout << "No current, no old transform available. Skipping..." << std::endl;
+        return false;
+    }
+
+    rm::Transform Tsm;
+    if(Tsm_opt)
+    {
+        Tsm = *Tsm_opt;
+    } else {
+        Tsm = Tsm_last;
+        // extrapolate time
+        Tsm_stamp = Tsm_stamp_last + (ros::Time::now() - stamp_last);
+    }
+
+    {
+        // updating global stuff
+        Tsm_last = Tsm;
+        Tsm_stamp_last = Tsm_stamp;
+        stamp_last = ros::Time::now();
+        has_last = true;
+    }
+
+    return true;
+}
+
 void updateImageBeamNew()
 {
     float wave_energy_threshold = 0.001;
 
     std::cout << "Reset Buffers" << std::endl;
+
+    if(image_resize_required)
+    {
+        // polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
+        std::cout << "Resize Canvas" << std::endl;
+        polar_image.resize(n_cells);
+        std::cout << "Resizing Canvas - Done." << std::endl;
+        image_resize_required = false;
+    }
+
     polar_image.setTo(cv::Scalar(0));
 
     bool static_tf = true;
@@ -706,7 +787,17 @@ void updateImageBeamNew()
     float energy_loss = 0.05;
 
 
-    // std::cout << "Simulate" << std::endl;
+    // without motion: update Tsm only once
+    if(!include_motion)
+    {
+        if(!updateTsm())
+        {
+            return;
+        }
+    }
+
+    rm::StopWatch sw_radar_sim;
+    sw_radar_sim();
     for(size_t angle_id=0; angle_id < n_angles; angle_id++)
     {   
         std::vector<Signal> signals;
@@ -722,20 +813,30 @@ void updateImageBeamNew()
             beam_sample_dist_normal_p_in_cone);
 
         // std::cout << "-- getTsm" << std::endl;
-        auto Tsm_opt = getTsm();
+        // auto Tsm_opt = getTsm();
 
-        rm::Transform Tsm;
-        if(Tsm_opt)
+
+
+
+        // Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
+
+        // Tsm.R = rm::EulerAngles{0.0149786, 0.00858233, 3.04591};
+        // Tsm.t = rm::Vector3{0.863185,-1.164,1.49406};
+
+        // with motion: update at each angle
+        if(include_motion)
         {
-            Tsm = *Tsm_opt;
-            Tsm_last = Tsm;
-        } else {
-            Tsm = Tsm_last;
+            if(!updateTsm())
+            {
+                continue;
+            }
         }
+        
+
+        rm::Transform Tsm = Tsm_last;
         
         rm::Memory<rm::Transform> Tbms(1);
         Tbms[0] = Tsm;
-
 
 
         for(size_t pass_id=0; pass_id < params.model.n_reflections; pass_id++)
@@ -1126,8 +1227,14 @@ void updateImageBeamNew()
                 // {
                 //     max_val = slice.at<float>(cell,0);
                 // }
+
+                // normalize
+                // slice.at<float>(cell, 0) = slice.at<float>(cell, 0) * energy_max;
             }
         }
+
+        // normalize
+        slice *= energy_max;
 
         // // cv::GaussianBlur(slice, slice, cv::Size(1, 9), 0);
     
@@ -1209,8 +1316,16 @@ void updateImageBeamNew()
         slice *= max_signal / max_val;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
-        ros::spinOnce();
+
+        if(include_motion)
+        {
+            ros::spinOnce();
+        }
     }
+
+    double el_radar_sim = sw_radar_sim();
+
+    std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
 }
 
 void updateImage()
@@ -1430,7 +1545,7 @@ int main_publisher(int argc, char** argv)
                 "mono8",
                 polar_image).toImageMsg();
         
-        msg->header.stamp = ros::Time::now();
+        msg->header.stamp = Tsm_stamp_last;
         pub.publish(msg);
 
         ros::spinOnce();

@@ -72,19 +72,19 @@ include_directories(
     include
 )
 
-add_executable(mesh_publisher src/mesh_publisher.cpp)
+#add_executable(mesh_publisher src/mesh_publisher.cpp)
 
-add_dependencies(mesh_publisher 
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    ${catkin_EXPORTED_TARGETS}
-    ${PROJECT_NAME}_gencfg
-)
+#add_dependencies(mesh_publisher 
+#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
+#    ${catkin_EXPORTED_TARGETS}
+#    ${PROJECT_NAME}_gencfg
+#)
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(mesh_publisher
-    ${catkin_LIBRARIES}
-    ${rmagine_LIBRARIES}
-)
+#target_link_libraries(mesh_publisher
+#    ${catkin_LIBRARIES}
+#    ${rmagine_LIBRARIES}
+#)
 
 
 find_package(OpenCV REQUIRED)

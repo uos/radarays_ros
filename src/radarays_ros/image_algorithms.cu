@@ -1,14 +1,10 @@
-#ifndef RADARAYS_ROS_IMAGE_ALGORITHMS_H
-#define RADARAYS_ROS_IMAGE_ALGORITHMS_H
+#include "radarays_ros/image_algorithms.cuh"
 
-#include <opencv2/core.hpp>
 
-#include <math.h>
-#include <iostream>
-
-namespace radarays_ros
+namespace radarays_ros 
 {
 
+__device__
 static constexpr int PERLIN_PERMUTATIONS[512] = {
     151, 160, 137, 91, 90, 15, 131, 13, 201,
     95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37,
@@ -47,15 +43,17 @@ static constexpr int PERLIN_PERMUTATIONS[512] = {
     176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222,
     114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180};
 
-
+__device__
 inline double perlin_fade(double t) {
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
+__device__
 inline double perlin_lerp(double t, double a, double b) {
     return a + t * (b - a);
 }
 
+__device__
 inline double perlin_grad(int hash, double x, double y, double z) {
     int h = hash & 15;
     double u = h < 8 ? x : y;
@@ -64,7 +62,8 @@ inline double perlin_grad(int hash, double x, double y, double z) {
 }
 
 // Compute Perlin noise at coordinates x, y
-static double perlin_noise(
+__device__
+double perlin_noise(
     double src_x,
     double src_y,
     double src_z = 0.0) 
@@ -103,59 +102,100 @@ static double perlin_noise(
     return r;
 }
 
-
-static void fill_perlin_noise(
-    cv::Mat_<uchar>& img,
-    const double& scale)
+/**
+ * Overlayed high and low perlin noise
+*/
+__device__
+double perlin_noise_hilo(
+    double off_x, double off_y,
+    double x, double y,
+    double scale_low, double scale_high,
+    double p_low)
 {
-    for (int y = 0; y < img.rows; ++y) {
-        for (int x = 0; x < img.cols; ++x) {
-            double p = perlin_noise(x  * scale, y * scale); // [-1.0,1.0]
-            p = (p + 1.0) / 2.0; // [0.0-1.0]
-            img.at<uchar>(y, x) = static_cast<uchar>(p * 255);
-        }
-    }
+    // low freq perlin
+    // const double scale_low = 0.05;
+    // high freq perlin
+    // const double scale_high = 0.2;
+
+    double p_perlin_low = perlin_noise(
+        off_x + x * scale_low, 
+        off_y + y * scale_low);
+    
+    double p_perlin_high = perlin_noise(
+        off_x + x * scale_high, 
+        off_y + y * scale_high);
+
+    return p_low * p_perlin_low + (1.0 - p_low) * p_perlin_high;
 }
 
-static void fill_perlin_noise(
-    cv::Mat_<double>& img,
-    const double& scale) 
+__global__ 
+void fill_perlin_noise_kernel(
+    cv::cuda::PtrStepSzf img,
+    double scale)
 {
-    for (int y = 0; y < img.rows; ++y) {
-        for (int x = 0; x < img.cols; ++x) {
-            double p = perlin_noise(x  * scale, y * scale); // [-1.0,1.0]
-            p = (p + 1.0) / 2.0; // [0.0-1.0]
-            img.at<double>(y, x) = static_cast<double>(p);
-        }
-    }
-}
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-static void fill_perlin_noise(
-    cv::Mat_<float>& img,
-    const double& scale) 
-{
-    for (int y = 0; y < img.rows; ++y) 
+    if (x <= img.cols - 1 && y <= img.rows - 1 && y >= 0 && x >= 0)
     {
-        for (int x = 0; x < img.cols; ++x) 
-        {
-            float p = perlin_noise(x  * scale, y * scale); // [-1.0,1.0]
-            p = (p + 1.0) / 2.0; // [0.0-1.0]
-            img.at<float>(y, x) = p;
-        }
+        float p = perlin_noise(x  * scale, y * scale); // [-1.0,1.0]
+        p = (p + 1.0) / 2.0; // [0.0-1.0]
+        img(y, x) = p;
     }
 }
 
-static cv::Mat_<uchar> make_perlin_noise_image(
-    const cv::Size& size,
+void fill_perlin_noise(
+    cv::cuda::GpuMat& img,
     const double& scale)
 {
-    cv::Mat_<uchar> img(size);
-    fill_perlin_noise(img, scale);
-    return img;
+    dim3 cthreads(16, 16);
+    dim3 cblocks(
+        static_cast<int>(std::ceil(img.size().width /
+            static_cast<double>(cthreads.x))),
+        static_cast<int>(std::ceil(img.size().height / 
+            static_cast<double>(cthreads.y))));
+
+    fill_perlin_noise_kernel<<<cblocks, cthreads>>>(img, scale);
 }
 
+__global__ 
+void fill_perlin_noise_hilo_kernel(
+    cv::cuda::PtrStepSzf img,
+    double off_x, double off_y,
+    double scale_low, double scale_high,
+    double p_low)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (x <= img.cols - 1 && y <= img.rows - 1 && y >= 0 && x >= 0)
+    {
+        float p = perlin_noise_hilo(
+            off_x, off_y,
+            x, y,
+            scale_low, scale_high,
+            p_low); // [-1.0,1.0]
+
+        img(y, x) = p;
+    }
+}
+
+void fill_perlin_noise_hilo(
+    cv::cuda::GpuMat& img,
+    double off_x, double off_y,
+    double scale_low, double scale_high,
+    double p_low)
+{
+    dim3 cthreads(16, 16);
+    dim3 cblocks(
+        static_cast<int>(std::ceil(img.size().width /
+            static_cast<double>(cthreads.x))),
+        static_cast<int>(std::ceil(img.size().height / 
+            static_cast<double>(cthreads.y))));
+
+    fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
+        img, off_x, off_y, scale_low, scale_high, p_low);
+}
 
 
 } // namespace radarays_ros
-
-#endif // RADARAYS_ROS_IMAGE_ALGORITHMS_H

@@ -86,22 +86,38 @@ include_directories(
 #    ${rmagine_LIBRARIES}
 #)
 
+find_package(CUDA)
+if(CUDA_FOUND)
+    message(WARNING "RADARAYS_ROS: CUDA_FOUND")
+    enable_language(CUDA)
+    include_directories(${CUDA_INCLUDE_DIRS})
+endif(CUDA_FOUND)
+
+set(CUDA_FOUND 0)
+
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 
-add_library(rmagine_radar_lib
+add_library(radarays
     src/radarays_ros/radar_algorithms.cpp
 )
 
 target_link_libraries(
-    rmagine_radar_lib
+    radarays
     ${rmagine_LIBRARIES}
 )
 
+if(CUDA_FOUND)
+    add_library(radarays_cuda SHARED
+        src/radarays_ros/image_algorithms.cu
+    )
+endif(CUDA_FOUND)
 
-add_executable(radar_simulator src/radar_simulator.cpp)
+
+add_executable(radar_simulator 
+    src/radar_simulator.cpp)
 
 add_dependencies(radar_simulator 
     ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -114,9 +130,16 @@ target_link_libraries(radar_simulator
     ${catkin_LIBRARIES}
     ${rmagine_LIBRARIES}
     ${OpenCV_LIBS}
-    rmagine_radar_lib
+    radarays
 )
 
+
+if(CUDA_FOUND)
+    target_compile_definitions(radar_simulator PUBLIC WITH_CUDA)
+    target_link_libraries(radar_simulator
+        radarays_cuda
+    )
+endif(CUDA_FOUND)
 
 add_executable(ray_reflection_test src/ray_reflection_test.cpp)
 
@@ -131,5 +154,5 @@ target_link_libraries(ray_reflection_test
     ${catkin_LIBRARIES}
     ${rmagine_LIBRARIES}
     ${OpenCV_LIBS}
-    rmagine_radar_lib
+    radarays
 )

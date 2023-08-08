@@ -2,6 +2,7 @@
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
 #include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
+#include <rmagine/simulation/OnDnSimulatorOptix.hpp>
 #include <rmagine/util/prints.h>
 #include <rmagine/util/StopWatch.hpp>
 #include <random>
@@ -29,6 +30,8 @@
 
 
 #include <opencv2/highgui.hpp>
+
+#include <omp.h>
 
 #if defined WITH_CUDA
 #include <opencv2/core/cuda.hpp>
@@ -63,12 +66,6 @@ static RadarParams default_params()
 }
 
 
-
-
-
-
-
-
 std::string map_frame = "map";
 std::string sensor_frame = "navtech";
 
@@ -83,8 +80,10 @@ std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
 
 rm::EmbreeMapPtr map;
-rm::OnDnSimulatorEmbreePtr sim;
+// thread -> sim
+std::unordered_map<unsigned int, rm::OnDnSimulatorEmbreePtr> sims;
 rm::SphericalModel radar_model;
+
 
 
 // STATE
@@ -214,9 +213,9 @@ void modelCB(
     ROS_INFO("Changing Model");
     
     // z_offset
-    auto T = rm::Transform::Identity();
-    T.t.z = config.z_offset;
-    sim->setTsb(T);
+    // auto T = rm::Transform::Identity();
+    // T.t.z = config.z_offset;
+    // sim->setTsb(T);
 
     if(   config.beam_sample_dist != cfg.beam_sample_dist 
         || abs(config.beam_width - cfg.beam_width ) > 0.001
@@ -353,11 +352,8 @@ void simulateImage2()
     std::cout << "Fill canvas: " << polar_image.cols << "x" << polar_image.rows << std::endl;
     polar_image.setTo(cv::Scalar(0));
 
-
-
     std::vector<float> denoising_weights;
     int denoising_mode = 0;
-
 
     if(cfg.signal_denoising > 0)
     {
@@ -426,8 +422,6 @@ void simulateImage2()
     wave.ray.orig = {0.0, 0.0, 0.0};
     wave.ray.dir = {1.0, 0.0, 0.0};
 
-
-
     el = sw();
 
     int n_cells = polar_image.rows;
@@ -456,20 +450,47 @@ void simulateImage2()
             params.model.n_samples,
             cfg.beam_sample_dist,
             cfg.beam_sample_dist_normal_p_in_cone);
-
         resample = false;
     }
-    
-
 
     rm::StopWatch sw_radar_sim;
     sw_radar_sim();
 
-    // #pragma omp parallel for if(!cfg.include_motion)
+    bool enable_omp = false;
+
+    #pragma omp parallel for if(!cfg.include_motion && enable_omp)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
+        rm::StopWatchHR sw;
+        sw();
+
+        int tid = 0;
+        if(!cfg.include_motion)
+        {
+            // threaded. get sim that belong to current thread
+            tid = omp_get_thread_num();
+        }
+
+        auto sims_it = sims.find(tid);
+        if(sims.find(tid) == sims.end())
+        {
+            sims[tid] = std::make_shared<rm::OnDnSimulatorEmbree>(map);
+            sims_it = sims.find(tid);
+            auto Tsb = rm::Transform::Identity();
+            sims_it->second->setTsb(Tsb);
+            #pragma omp critical
+            std::cout << "Created new simulator for thread " << tid << std::endl; 
+        }
+        auto sim = sims_it->second;
+
+        
+        
+
         std::vector<Signal> signals;
         std::vector<DirectedWave> waves = waves_start;
+
+        rm::OnDnModel model = make_model(waves);
+        sim->setModel(model);
 
         // with motion: update at each angle
         if(cfg.include_motion)
@@ -480,6 +501,7 @@ void simulateImage2()
             }
         }
 
+        
         // make Tam ? angle to map Tam = Tsm * Tas
         // Tas is the transformation of angle to sensor
         
@@ -490,43 +512,48 @@ void simulateImage2()
         rm::Transform Tsm = Tsm_last;
         rm::Transform Tam = Tsm * Tas;
         
-        rm::Memory<rm::Transform> Tbms(1);
-        Tbms[0] = Tam;
+        rm::Memory<rm::Transform> Tams(1);
+        Tams[0] = Tam;
 
+        double el1 = sw();
+        // std::cout << "el1: " << el1 << std::endl;
+        // std::cout << "Create Signal" << std::endl;
+        ///////
+        /// 1. Signal generation
         for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
         {
-            // std::cout << "Angle " << angle_id << " - pass " << pass_id << std::endl;
-            // std::cout << "Pass " << pass_id << std::endl; 
-            rm::OnDnModel model = make_model(waves);
-
-            // raycast
-            sim->setModel(model);
-            
-            // results in sensor frame!
             ResT results;
             results.hits.resize(model.size());
             results.ranges.resize(model.size());
             results.normals.resize(model.size());
             results.object_ids.resize(model.size());
-            sim->simulate(Tbms, results);
+            sim->simulate(Tams, results);
             
-            // Move rays
-            for(size_t i=0; i < waves.size(); i++)
-            {
-                const float wave_range = results.ranges[i];
-                
-                DirectedWave wave = waves[i];
-                wave.moveInplace(wave_range);
-                waves[i] = wave;
-            }
-
             // reflect / refract / absorb / return
             std::vector<DirectedWave> waves_new;
 
+            // Move rays
+            // #pragma omp parallel for
             for(size_t i=0; i < waves.size(); i++)
             {
-                // read ray data
-                const DirectedWave incidence = waves[i];
+                // get
+                DirectedWave wave = waves[i];
+                const float wave_range = results.ranges[i];
+                
+                // do
+                wave.moveInplace(wave_range);
+                
+            //     // write
+            //     waves[i] = wave;
+            // }
+
+            
+
+            // for(size_t i=0; i < waves.size(); i++)
+            // {
+            //     // read ray data
+            //     const DirectedWave incidence = waves[i];
+                const DirectedWave incidence = wave;
                 const rmagine::Vector surface_normal = results.normals[i].normalize();
                 const unsigned int obj_id = results.object_ids[i];
 
@@ -656,16 +683,30 @@ void simulateImage2()
             }
 
             // update sensor model
-            waves = waves_new;
-
+            if(pass_id < params.model.n_reflections - 1)
+            {
+                waves = waves_new;
+                model = make_model(waves);
+                sim->setModel(model);
+            } else {
+                // last run. dont need to update
+            }
+            
             // std::cout << "Angle " << angle_id << " - pass " << pass_id << " - done." << std::endl;
         }
 
-        // cv::Mat 
+
+        double el2 = sw();
+
+        //////////////////
+        /// 2. Signals -> Canvas
+        /// 2.1. Signal Noise -> Slice
+        /// 2.2. Ambient noise -> Slice
+        /// 2.3. Slice -> Canvas
         cv::Mat_<float> slice(polar_image.rows, 1, 0.0);
 
         float max_val = 0.0;
-        // Draw signals to canvas
+        // Draw signals to slice
         for(size_t i=0; i<signals.size(); i++)
         {
             auto signal = signals[i];
@@ -714,6 +755,8 @@ void simulateImage2()
 
         // normalize
         slice *= cfg.energy_max;
+
+        double el3 = sw();
 
         int col = (cfg.scroll_image + angle_id) % polar_image.cols;
 
@@ -788,10 +831,25 @@ void simulateImage2()
             }
         }
         
+        double el4 = sw();
+
         float max_signal = 120.0;
         slice *= max_signal / max_val;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
+
+        double el5 = sw();
+
+        #pragma omp critical
+        {
+            std::cout << "Runtime TID " << tid << ": " << el1 + el2 + el3 + el4 + el5 << "s" << std::endl; 
+            std::cout << "- prepare: " << el1 * 1000.0 << "ms " << std::endl;
+            std::cout << "- signals: " << el2 * 1000.0 << "ms" << std::endl;
+            std::cout << "- noise (system): " << el3 * 1000.0 << "ms" << std::endl;
+            std::cout << "- noise (ambient): " << el4 * 1000.0 << "ms" << std::endl;
+            std::cout << "- postprocess: " << el5 * 1000.0 << "ms" << std::endl;
+        }
+        
 
         if(cfg.include_motion)
         {
@@ -856,14 +914,12 @@ int main_action_server(int argc, char** argv)
     std::cout << "SPEED IN AIR: " << params.materials.data[material_id_air].velocity << std::endl;
 
     map = rm::import_embree_map(map_file);
-    sim = std::make_shared<rm::OnDnSimulatorEmbree>(
-        map);
 
     // offset of sensor center to frame
     auto Tsb = rm::Transform::Identity();
     Tsb.t.z = 0.0;
 
-    sim->setTsb(Tsb);
+    // sim->setTsb(Tsb);
 
     // n_cells = 3424;
     // n_cells = 1712;
@@ -946,14 +1002,12 @@ int main_publisher(int argc, char** argv)
     std::cout << "SPEED IN AIR: " << params.materials.data[material_id_air].velocity << std::endl;
 
     map = rm::import_embree_map(map_file);
-    sim = std::make_shared<rm::OnDnSimulatorEmbree>(
-        map);
 
     // offset of sensor center to frame
-    auto Tsb = rm::Transform::Identity();
-    Tsb.t.z = 0.0;
+    // auto Tsb = rm::Transform::Identity();
+    // Tsb.t.z = 0.0;
 
-    sim->setTsb(Tsb);
+    // sim->setTsb(Tsb);
 
     // n_cells = 3424;
     // n_cells = 1712;

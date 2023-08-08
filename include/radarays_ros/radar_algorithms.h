@@ -224,12 +224,27 @@ rmagine::OnDnModel make_model(
 rmagine::OnDnModel make_model(
     const std::vector<std::vector<DirectedWave> >& waves);
 
+std::vector<DirectedWave> sample_cone_local(
+    const DirectedWave& wave_ex, 
+    float width,
+    int n_samples,
+    int sample_dist,
+    float p_in_cone);
+
+rmagine::Transform ray_to_transform(
+    rmagine::Vector orig, 
+    rmagine::Vector dir);
+
+rmagine::Quaternion polar_to_quat(
+    float phi, float theta);
+
 std::vector<DirectedWave> sample_cone(
     const DirectedWave& wave_mean, 
     float width,
     int n_samples,
     int sample_dist,
     float p_in_cone);
+
 
 
 

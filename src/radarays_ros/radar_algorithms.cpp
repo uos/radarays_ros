@@ -197,6 +197,102 @@ rmagine::OnDnModel make_model(
     return model;
 }
 
+// rm::Memory<rm::Transform> local_transforms(
+//     const std::vector<DirectedWave>& waves)
+// {
+
+// }
+
+
+// rmagine::Transform angle_to_transform(
+//     rmagine::Vector
+// )
+
+rmagine::Transform ray_to_transform(
+    rmagine::Vector orig, 
+    rmagine::Vector dir)
+{
+    rmagine::Transform T;
+    T.t = orig;
+    auto dirn = dir.normalize();
+
+    rmagine::Vector up{0.0, 0.0, 1.0};
+
+    rmagine::Vector xaxis = up.cross(dirn).normalize();
+    rmagine::Vector yaxis = dirn.cross(xaxis).normalize();
+
+    rmagine::Matrix3x3 R;
+    R(0, 0) = xaxis.x;
+    R(0, 1) = yaxis.x;
+    R(0, 2) = dirn.x;
+
+    R(1, 0) = xaxis.y;
+    R(1, 1) = yaxis.y;
+    R(1, 2) = dirn.y;
+
+    R(2, 0) = xaxis.z;
+    R(2, 1) = yaxis.z;
+    R(2, 2) = dirn.z;
+
+    T.R = R;
+
+    return T;
+}
+
+rmagine::Quaternion polar_to_quat(float phi, float theta)
+{
+    rmagine::Quaternion q = rmagine::EulerAngles{0.0, phi, theta};
+    return q;
+}
+
+std::vector<DirectedWave> sample_cone_local(
+    const DirectedWave& wave_ex, 
+    float width,
+    int n_samples,
+    int sample_dist,
+    float p_in_cone)
+{
+    std::vector<DirectedWave> waves;
+    n_samples--;
+
+    std::random_device                      rand_dev;
+    std::mt19937                            gen(rand_dev());
+    std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
+    std::normal_distribution<float>         dist_normal(0.0, 1.0);
+
+    float z = M_SQRT2 * erfinvf(p_in_cone);
+
+    float radius = width / 2.0;
+
+    for(; n_samples>0; n_samples--)
+    {
+        float random_angle = dist_uni(gen) * 2.0f * M_PI - M_PI;
+
+        float random_radius;
+        if(sample_dist == 0) {
+            random_radius = dist_uni(gen) * radius;
+        } else if(sample_dist == 1) {
+            random_radius = sqrt(dist_uni(gen)) * radius;
+        } else if(sample_dist == 2) {
+            random_radius = (dist_normal(gen) / z) * radius;
+        } else if(sample_dist == 3) {
+            random_radius = sqrt(abs(dist_normal(gen)) / z) * radius;
+        }
+
+        float alpha = random_radius * cos(random_angle);
+        float beta = random_radius * sin(random_angle);
+
+        rmagine::EulerAngles e = {0.f, alpha, beta};
+
+        DirectedWave wave = wave_ex;
+        wave.ray.orig = {0.0, 0.0, 0.0};
+        wave.ray.dir = e * rmagine::Vector{1.0, 0.0, 0.0};
+        waves.push_back(wave);
+    }
+
+    return waves;
+}
+
 std::vector<DirectedWave> sample_cone(
     const DirectedWave& wave_mean, 
     float width,

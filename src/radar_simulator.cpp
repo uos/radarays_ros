@@ -103,6 +103,9 @@ int material_id_air = 0;
 std::vector<int> object_materials;
 
 
+std::vector<DirectedWave> waves_start;
+bool resample = true;
+
 // TODO: precompute this:
 cv::Mat perlin_noise_buffer;
 
@@ -214,7 +217,16 @@ void modelCB(
     auto T = rm::Transform::Identity();
     T.t.z = config.z_offset;
     sim->setTsb(T);
-    
+
+    if(   config.beam_sample_dist != cfg.beam_sample_dist 
+        || abs(config.beam_width - cfg.beam_width ) > 0.001
+        || config.n_samples != cfg.n_samples
+        || abs(config.beam_sample_dist_normal_p_in_cone - cfg.beam_sample_dist_normal_p_in_cone) > 0.001
+    )
+    {
+        resample = true;
+    }
+
     // update radar model
     radar_model.range.min = config.range_min;
     radar_model.range.max = config.range_max;
@@ -323,8 +335,6 @@ void simulateImage2()
 {
     float wave_energy_threshold = 0.001;
 
-    
-
     if(polar_image.rows != cfg.n_cells)
     {
         // polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
@@ -381,6 +391,7 @@ void simulateImage2()
 
         // scale so that mode has weight 1
         // if(false)
+        if(denoising_weights.size() > 0)
         {
             double denoising_mode_val = denoising_weights[denoising_mode];
 
@@ -392,23 +403,14 @@ void simulateImage2()
         
     }
 
+    // std::cout << "Denoising weights (mode:" << denoising_mode << "): ";
+    // for(size_t i=0; i<denoising_weights.size(); i++)
+    // {
+    //     std::cout << denoising_weights[i] << ", ";
+    // }
+    // std::cout << std::endl;
 
-    
-
-
-
-    std::cout << "Denoising weights (mode:" << denoising_mode << "): ";
-    for(size_t i=0; i<denoising_weights.size(); i++)
-    {
-        std::cout << denoising_weights[i] << ", ";
-    }
-    std::cout << std::endl;
-
-
-    
     // gen ambient noise
-
-
     bool static_tf = true;
 
     rm::StopWatch sw;
@@ -421,6 +423,10 @@ void simulateImage2()
     wave.velocity     =  0.3; // m / ns - speed in air
     wave.material_id  =  0;   // air
     wave.time         =  0.0; // ns
+    wave.ray.orig = {0.0, 0.0, 0.0};
+    wave.ray.dir = {1.0, 0.0, 0.0};
+
+
 
     el = sw();
 
@@ -442,23 +448,28 @@ void simulateImage2()
         }
     }
 
+    if(resample)
+    {
+        waves_start = sample_cone_local(
+            wave,
+            params.model.beam_width,
+            params.model.n_samples,
+            cfg.beam_sample_dist,
+            cfg.beam_sample_dist_normal_p_in_cone);
+
+        resample = false;
+    }
+    
+
+
     rm::StopWatch sw_radar_sim;
     sw_radar_sim();
 
-
+    // #pragma omp parallel for if(!cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
         std::vector<Signal> signals;
-        wave.ray.orig     = radar_model.getOrigin(0, angle_id);
-        wave.ray.dir      = radar_model.getDirection(0, angle_id);
-        
-        // std::cout << "- Angle: " << angle_id << std::endl;
-        std::vector<DirectedWave> waves = sample_cone(
-            wave, 
-            params.model.beam_width,
-            params.model.n_samples, 
-            cfg.beam_sample_dist, 
-            cfg.beam_sample_dist_normal_p_in_cone);
+        std::vector<DirectedWave> waves = waves_start;
 
         // with motion: update at each angle
         if(cfg.include_motion)
@@ -469,13 +480,22 @@ void simulateImage2()
             }
         }
 
+        // make Tam ? angle to map Tam = Tsm * Tas
+        // Tas is the transformation of angle to sensor
+        
+        rm::Transform Tas;
+        Tas.R = rm::EulerAngles{0.0, 0.0, radar_model.getTheta(angle_id)};
+        Tas.t = radar_model.getOrigin(0, angle_id);
+
         rm::Transform Tsm = Tsm_last;
+        rm::Transform Tam = Tsm * Tas;
         
         rm::Memory<rm::Transform> Tbms(1);
-        Tbms[0] = Tsm;
+        Tbms[0] = Tam;
 
         for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
         {
+            // std::cout << "Angle " << angle_id << " - pass " << pass_id << std::endl;
             // std::cout << "Pass " << pass_id << std::endl; 
             rm::OnDnModel model = make_model(waves);
 
@@ -488,7 +508,6 @@ void simulateImage2()
             results.ranges.resize(model.size());
             results.normals.resize(model.size());
             results.object_ids.resize(model.size());
-            
             sim->simulate(Tbms, results);
             
             // Move rays
@@ -638,6 +657,8 @@ void simulateImage2()
 
             // update sensor model
             waves = waves_new;
+
+            // std::cout << "Angle " << angle_id << " - pass " << pass_id << " - done." << std::endl;
         }
 
         // cv::Mat 
@@ -694,12 +715,7 @@ void simulateImage2()
         // normalize
         slice *= cfg.energy_max;
 
-        // // cv::GaussianBlur(slice, slice, cv::Size(1, 9), 0);
-    
-        // std::cout << "max_val: " << max_val << std::endl;
         int col = (cfg.scroll_image + angle_id) % polar_image.cols;
-
-        
 
         if(cfg.ambient_noise)
         {
@@ -738,7 +754,6 @@ void simulateImage2()
                     p = 0.9 * p_perlin1 + 0.1 * p_perlin2;
                 }
                 
-
                 // p = p * 
                 // p = (p + 1.0) / 2.0; // [0.0-1.0]
 

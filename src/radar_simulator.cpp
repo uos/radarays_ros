@@ -349,7 +349,7 @@ void simulateImage2()
         std::cout << "Resizing canvas - done." << std::endl;
     }
 
-    std::cout << "Fill canvas: " << polar_image.cols << "x" << polar_image.rows << std::endl;
+    // std::cout << "Fill canvas: " << polar_image.cols << "x" << polar_image.rows << std::endl;
     polar_image.setTo(cv::Scalar(0));
 
     std::vector<float> denoising_weights;
@@ -409,8 +409,8 @@ void simulateImage2()
     // gen ambient noise
     bool static_tf = true;
 
-    rm::StopWatch sw;
-    double el;
+    // rm::StopWatch sw;
+    // double el;
 
     DirectedWave wave;
     wave.energy       =  1.0;
@@ -422,7 +422,7 @@ void simulateImage2()
     wave.ray.orig = {0.0, 0.0, 0.0};
     wave.ray.dir = {1.0, 0.0, 0.0};
 
-    el = sw();
+    // el = sw();
 
     int n_cells = polar_image.rows;
     int n_angles = polar_image.cols;
@@ -457,12 +457,17 @@ void simulateImage2()
     sw_radar_sim();
 
     bool enable_omp = false;
+    
+    // std::cout << "Threads: " << OMP_NUM_THREADS << std::endl;
 
-    #pragma omp parallel for if(!cfg.include_motion && enable_omp)
+
+    #pragma omp parallel for if(!cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
-        rm::StopWatchHR sw;
-        sw();
+        // #if defined MEASURE_TIME_INNER
+        // rm::StopWatchHR sw;
+        // sw();
+        // #endif // MEASURE_TIME_INNER
 
         int tid = 0;
         if(!cfg.include_motion)
@@ -478,15 +483,18 @@ void simulateImage2()
             sims_it = sims.find(tid);
             auto Tsb = rm::Transform::Identity();
             sims_it->second->setTsb(Tsb);
+
             #pragma omp critical
             std::cout << "Created new simulator for thread " << tid << std::endl; 
         }
         auto sim = sims_it->second;
 
-        
-        
+        if(!sim)
+        {
+            std::cout << "ERROR!! Sim shared ptr empty" << std::endl;
+        }
 
-        std::vector<Signal> signals;
+        
         std::vector<DirectedWave> waves = waves_start;
 
         rm::OnDnModel model = make_model(waves);
@@ -500,7 +508,6 @@ void simulateImage2()
                 continue;
             }
         }
-
         
         // make Tam ? angle to map Tam = Tsm * Tas
         // Tas is the transformation of angle to sensor
@@ -515,9 +522,11 @@ void simulateImage2()
         rm::Memory<rm::Transform> Tams(1);
         Tams[0] = Tam;
 
-        double el1 = sw();
+        // double el1 = sw();
         // std::cout << "el1: " << el1 << std::endl;
         // std::cout << "Create Signal" << std::endl;
+        
+        std::vector<Signal> signals;
         ///////
         /// 1. Signal generation
         for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
@@ -539,28 +548,17 @@ void simulateImage2()
                 // get
                 DirectedWave wave = waves[i];
                 const float wave_range = results.ranges[i];
-                
-                // do
-                wave.moveInplace(wave_range);
-                
-            //     // write
-            //     waves[i] = wave;
-            // }
-
-            
-
-            // for(size_t i=0; i < waves.size(); i++)
-            // {
-            //     // read ray data
-            //     const DirectedWave incidence = waves[i];
-                const DirectedWave incidence = wave;
                 const rmagine::Vector surface_normal = results.normals[i].normalize();
                 const unsigned int obj_id = results.object_ids[i];
+
 
                 if(obj_id > 10000)
                 {
                     continue;
-                } 
+                }
+                
+                // do
+                const DirectedWave incidence = wave.move(wave_range);
 
                 // inititalize
                 DirectedWave reflection = incidence;
@@ -682,10 +680,11 @@ void simulateImage2()
                 waves_new[i].moveInplace(skip_dist);
             }
 
+            waves = waves_new;
+
             // update sensor model
             if(pass_id < params.model.n_reflections - 1)
             {
-                waves = waves_new;
                 model = make_model(waves);
                 sim->setModel(model);
             } else {
@@ -696,7 +695,7 @@ void simulateImage2()
         }
 
 
-        double el2 = sw();
+        // double el2 = sw();
 
         //////////////////
         /// 2. Signals -> Canvas
@@ -756,7 +755,7 @@ void simulateImage2()
         // normalize
         slice *= cfg.energy_max;
 
-        double el3 = sw();
+        // double el3 = sw();
 
         int col = (cfg.scroll_image + angle_id) % polar_image.cols;
 
@@ -831,24 +830,24 @@ void simulateImage2()
             }
         }
         
-        double el4 = sw();
+        // double el4 = sw();
 
         float max_signal = 120.0;
         slice *= max_signal / max_val;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
 
-        double el5 = sw();
+        // double el5 = sw();
 
-        #pragma omp critical
-        {
-            std::cout << "Runtime TID " << tid << ": " << el1 + el2 + el3 + el4 + el5 << "s" << std::endl; 
-            std::cout << "- prepare: " << el1 * 1000.0 << "ms " << std::endl;
-            std::cout << "- signals: " << el2 * 1000.0 << "ms" << std::endl;
-            std::cout << "- noise (system): " << el3 * 1000.0 << "ms" << std::endl;
-            std::cout << "- noise (ambient): " << el4 * 1000.0 << "ms" << std::endl;
-            std::cout << "- postprocess: " << el5 * 1000.0 << "ms" << std::endl;
-        }
+        // #pragma omp critical
+        // {
+        //     std::cout << "Runtime TID " << tid << ": " << el1 + el2 + el3 + el4 + el5 << "s" << std::endl; 
+        //     std::cout << "- prepare: " << el1 * 1000.0 << "ms " << std::endl;
+        //     std::cout << "- signals: " << el2 * 1000.0 << "ms" << std::endl;
+        //     std::cout << "- noise (system): " << el3 * 1000.0 << "ms" << std::endl;
+        //     std::cout << "- noise (ambient): " << el4 * 1000.0 << "ms" << std::endl;
+        //     std::cout << "- postprocess: " << el5 * 1000.0 << "ms" << std::endl;
+        // }
         
 
         if(cfg.include_motion)
@@ -859,7 +858,8 @@ void simulateImage2()
 
     double el_radar_sim = sw_radar_sim();
 
-    std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
+    // std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
+    std::cout << el_radar_sim << std::endl;
 }
 
 std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;
@@ -1055,7 +1055,7 @@ int main_publisher(int argc, char** argv)
     while(nh.ok())
     {
         loadParameters();
-        ROS_INFO("Simulate!");
+        // ROS_INFO("Simulate!");
         simulateImage2();
 
         sensor_msgs::ImagePtr msg = 

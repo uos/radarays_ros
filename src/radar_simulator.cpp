@@ -461,12 +461,12 @@ void simulateImage2()
     // std::cout << "Threads: " << OMP_NUM_THREADS << std::endl;
 
 
-    #pragma omp parallel for if(!cfg.include_motion)
+    // #pragma omp parallel for if(!cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
         // #if defined MEASURE_TIME_INNER
-        // rm::StopWatchHR sw;
-        // sw();
+        rm::StopWatchHR sw_inner;
+        sw_inner();
         // #endif // MEASURE_TIME_INNER
 
         int tid = 0;
@@ -526,6 +526,8 @@ void simulateImage2()
         // std::cout << "el1: " << el1 << std::endl;
         // std::cout << "Create Signal" << std::endl;
         
+        double el1 = sw_inner();
+
         std::vector<Signal> signals;
         ///////
         /// 1. Signal generation
@@ -695,7 +697,7 @@ void simulateImage2()
         }
 
 
-        // double el2 = sw();
+        double el2 = sw_inner();
 
         //////////////////
         /// 2. Signals -> Canvas
@@ -755,7 +757,7 @@ void simulateImage2()
         // normalize
         slice *= cfg.energy_max;
 
-        // double el3 = sw();
+        double el3 = sw_inner();
 
         int col = (cfg.scroll_image + angle_id) % polar_image.cols;
 
@@ -830,14 +832,19 @@ void simulateImage2()
             }
         }
         
-        // double el4 = sw();
+        double el4 = sw_inner();
 
         float max_signal = 120.0;
         slice *= max_signal / max_val;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
 
-        // double el5 = sw();
+        double el5 = sw_inner();
+
+        double tot = el1 + el2 + el3 + el4 + el5;
+
+        std::cout << std::fixed << std::setprecision(8) 
+            << el1/tot << ", " << el2/tot << ", " << el3/tot << ", " << el4/tot << ", " << el5/tot << std::endl;
 
         // #pragma omp critical
         // {
@@ -859,7 +866,7 @@ void simulateImage2()
     double el_radar_sim = sw_radar_sim();
 
     // std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
-    std::cout << el_radar_sim << std::endl;
+    // std::cout << std::fixed << std::setprecision(8) << el_radar_sim << std::endl;
 }
 
 std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;

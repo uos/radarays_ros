@@ -75,6 +75,14 @@ void propagate_waves_kernel(
     const unsigned int obj_id = res_object_ids[tid];
     
 
+    if(obj_id > 10000)
+    {
+        // finish and mark
+        waves_new_mask[refractionid] = 0;
+        waves_new_mask[reflectionid] = 0;
+        return;
+    }
+
     if(res_hit == 0)
     {
         // finish and mark
@@ -113,7 +121,7 @@ void propagate_waves_kernel(
     }
 
 
-    // fresnel
+    // 3. fresnel
     {
         const double v1 = incidence.velocity;
         const double v2 = v_refraction;
@@ -195,7 +203,7 @@ void propagate_waves_kernel(
         refraction.energy = Teff * incidence.energy;
     }
 
-    // 3. returning signals
+    // 4. returning signals
     if(reflection.energy > wave_energy_threshold)
     {
         // there is some energy reflected, so let it return

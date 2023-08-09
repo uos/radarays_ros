@@ -414,13 +414,31 @@ void simulateImageCuda()
         resample = false;
     }
 
+
+
+    rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
+    for(size_t i=0; i<object_materials.size(); i++)
+    {
+        object_materials2[i] = object_materials[i];
+    }
+    rm::Memory<int, rm::VRAM_CUDA> object_materials_gpu = object_materials2;
+
+    rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(params.materials.data.size());
+    for(size_t i=0; i<params.materials.data.size(); i++)
+    {
+        materials2[i] = params.materials.data[i];
+    }
+    rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
+
+    rm::StopWatch sw_radar_sim;
+    sw_radar_sim();
+
     // compute maximum number of signals
 
     // #pragma omp parallel for
-
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
-        std::cout << "Angle " << angle_id << std::endl;
+        // std::cout << "Angle " << angle_id << std::endl;
         int tid = omp_get_thread_num();
 
         auto sims_it = sims_gpu.find(tid);
@@ -435,8 +453,6 @@ void simulateImageCuda()
             std::cout << "Created new simulator for thread " << tid << std::endl; 
         }
         auto sim = sims_it->second;
-
-
 
         std::vector<DirectedWave> waves = waves_start;
         rm::OnDnModel model = make_model(waves);
@@ -453,69 +469,89 @@ void simulateImageCuda()
         rm::Memory<rm::Transform> Tams(1);
         Tams[0] = Tam;
 
-        using ResT = rm::Bundle<
-                rm::Hits<rm::VRAM_CUDA>,
-                rm::Ranges<rm::VRAM_CUDA>,
-                rm::Normals<rm::VRAM_CUDA>,
-                rm::ObjectIds<rm::VRAM_CUDA> // connection to material
-            >;
-
-        ResT results;
-
-        results.hits.resize(model.size());
-        results.ranges.resize(model.size());
-        results.normals.resize(model.size());
-        results.object_ids.resize(model.size());
-        
-        // #pragma omp critical
-        // std::cout << "TID " << tid << " sim!" << std::endl; 
-
-        sim->simulate(Tams, results);
-
-        rm::Memory<DirectedWave, rm::RAM_CUDA> waves2(waves.size());
-        for(size_t i=0; i<waves.size(); i++)
+        for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
         {
-            waves2[i] = waves[i];
-        }
-        rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_gpu = waves2;
+            using ResT = rm::Bundle<
+                    rm::Hits<rm::VRAM_CUDA>,
+                    rm::Ranges<rm::VRAM_CUDA>,
+                    rm::Normals<rm::VRAM_CUDA>,
+                    rm::ObjectIds<rm::VRAM_CUDA> // connection to material
+                >;
 
-        rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
-        for(size_t i=0; i<object_materials.size(); i++)
-        {
-            object_materials2[i] = object_materials[i];
-        }
-        rm::Memory<int, rm::VRAM_CUDA> object_materials_gpu = object_materials2;
+            ResT results;
 
-        rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(params.materials.data.size());
-        for(size_t i=0; i<params.materials.data.size(); i++)
-        {
-            materials2[i] = params.materials.data[i];
-        }
-        rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
+            results.hits.resize(model.size());
+            results.ranges.resize(model.size());
+            results.normals.resize(model.size());
+            results.object_ids.resize(model.size());
+            
+            // #pragma omp critical
+            // std::cout << "TID " << tid << " sim!" << std::endl; 
 
-        rm::Memory<Signal, rm::VRAM_CUDA> signals(waves.size());
-        rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_new(waves.size() * 2);
-        rm::Memory<uint8_t, rm::VRAM_CUDA> waves_new_mask(waves.size() * 2);
+            sim->simulate(Tams, results);
 
-        propagate_waves(
-                materials_gpu,
-                object_materials_gpu,
-                material_id_air,
 
-                waves_gpu,
-                results.hits, 
-                results.ranges, 
-                results.normals, 
-                results.object_ids,
-                
-                signals,
-                waves_new,
-                waves_new_mask);
+            rm::Memory<DirectedWave, rm::RAM_CUDA> waves2(waves.size());
+            for(size_t i=0; i<waves.size(); i++)
+            {
+                waves2[i] = waves[i];
+            }
+            rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_gpu = waves2;
 
-        // write back
-        
-    }
 
+            rm::Memory<Signal, rm::VRAM_CUDA> signals_gpu(waves.size());
+            rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_new_gpu(waves.size() * 2);
+            rm::Memory<uint8_t, rm::VRAM_CUDA> waves_new_mask_gpu(waves.size() * 2);
+
+            propagate_waves(
+                    materials_gpu,
+                    object_materials_gpu,
+                    material_id_air,
+
+                    waves_gpu,
+                    results.hits, 
+                    results.ranges, 
+                    results.normals, 
+                    results.object_ids,
+                    
+                    signals_gpu,
+                    waves_new_gpu,
+                    waves_new_mask_gpu);
+
+            // write back
+            // rm::Memory<DirectedWave, rm::RAM_CUDA> waves_new_(waves.size());
+
+            rm::Memory<DirectedWave, rm::RAM_CUDA> waves_new = waves_new_gpu;
+            rm::Memory<uint8_t, rm::RAM_CUDA> waves_new_mask = waves_new_mask_gpu;
+
+            waves.resize(0);
+            // // waves.reserve(waves_new.size());
+
+            for(size_t i=0; i<waves_new.size(); i++)
+            {
+                if(waves_new_mask[i])
+                {
+                    waves.push_back(waves_new[i]);
+                }
+            }
+
+            // update sensor model
+            if(pass_id < params.model.n_reflections - 1)
+            {
+                model = make_model(waves);
+                sim->setModel(model);
+            } else {
+                // last run. dont need to update
+            }
+
+            // waves.shrink_to_fit();
+
+        } // pass loop
+
+    } // angle loop
+
+    double el = sw_radar_sim();
+    std::cout << el << std::endl;
 
 
 }

@@ -326,6 +326,9 @@ rm::Memory<unsigned char, rm::VRAM_CUDA> polar_image_cuda;
 rm::Memory<float, rm::VRAM_CUDA> signals_cuda;
 rm::Memory<bool, rm::VRAM_CUDA> signals_mask_cuda;
 
+
+
+
 void simulateImageCuda2()
 {
     // 
@@ -384,15 +387,13 @@ void simulateImageCuda2()
         }
     }
 
-    DirectedWave wave;
-    wave.energy       =  1.0;
-    wave.polarization =  0.5;
-    wave.frequency    = 76.5; // GHz
-    wave.velocity     =  0.3; // m / ns - speed in air
-    wave.material_id  =  0;   // air
-    wave.time         =  0.0; // ns
-    wave.ray.orig = {0.0, 0.0, 0.0};
-    wave.ray.dir = {1.0, 0.0, 0.0};
+    DirectedWaveAttributes wave_att_ex;
+    wave_att_ex.energy       =  1.0;
+    wave_att_ex.polarization =  0.5;
+    wave_att_ex.frequency    = 76.5; // GHz
+    wave_att_ex.velocity     =  0.3; // m / ns - speed in air
+    wave_att_ex.material_id  =  0;   // air
+    wave_att_ex.time         =  0.0; // ns
 
     int n_cells = polar_image.rows;
     int n_angles = polar_image.cols;
@@ -404,16 +405,16 @@ void simulateImageCuda2()
         return;
     }
 
-    if(resample)
-    {
-        waves_start = sample_cone_local(
-            wave,
-            params.model.beam_width,
-            params.model.n_samples,
-            cfg.beam_sample_dist,
-            cfg.beam_sample_dist_normal_p_in_cone);
-        resample = false;
-    }
+    // if(resample)
+    // {
+    //     waves_start = sample_cone_local(
+    //         wave,
+    //         params.model.beam_width,
+    //         params.model.n_samples,
+    //         cfg.beam_sample_dist,
+    //         cfg.beam_sample_dist_normal_p_in_cone);
+    //     resample = false;
+    // }
 
     rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
     for(size_t i=0; i<object_materials.size(); i++)
@@ -429,14 +430,192 @@ void simulateImageCuda2()
     }
     rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
 
-    rm::StopWatch sw_radar_sim;
-    sw_radar_sim();
+
+    // prepare radar model
+
+    size_t n_rays = n_angles * cfg.n_samples;
+    std::cout << "Waves: " << n_rays << std::endl;
+    
+    
+    rm::OnDnModel waves;
+    waves.range = radar_model.range;
+    waves.dirs.resize(n_rays);
+    waves.origs.resize(n_rays);
+    waves.width = n_angles;
+    waves.height = params.model.n_samples;
+    rm::Memory<DirectedWaveAttributes> wave_attributes(n_rays);
 
 
+    // auto samples = sample_cone
+
+    rm::Vector front = {1.0, 0.0, 0.0};
+    rm::Memory<rm::Vector> ray_dirs_local = sample_cone(
+        front,
+        params.model.beam_width,
+        params.model.n_samples,
+        cfg.beam_sample_dist,
+        cfg.beam_sample_dist_normal_p_in_cone
+    );
+
+    std::cout << "Filling Model" << std::endl;
+
+    for(size_t angle_id=0; angle_id<n_angles; angle_id++)
+    {
+        auto orig = radar_model.getOrigin(0, angle_id);
+        auto dir = radar_model.getDirection(0, angle_id);
+
+        rm::Transform Tas;
+        Tas.R = rm::EulerAngles{0.0, 0.0, radar_model.getTheta(angle_id)};
+        Tas.t = radar_model.getOrigin(0, angle_id);
+
+        for(size_t sample_id = 0; sample_id < params.model.n_samples; sample_id++)
+        {
+            size_t buf_id = waves.getBufferId(sample_id, angle_id);
+            waves.dirs[buf_id] = Tas.R * ray_dirs_local[sample_id];
+            waves.origs[buf_id] = {0.0, 0.0, 0.0};
+            wave_attributes[buf_id] = wave_att_ex;
+        }
+
+    }
+
+    std::cout << "Done filling model" << std::endl;
+    
+    
+
+    // going to GPU
+
+    // 1. preallocate everything necessary
+
+    using ResT = rm::Bundle<
+        rm::Hits<rm::VRAM_CUDA>,
+        rm::Ranges<rm::VRAM_CUDA>,
+        rm::Normals<rm::VRAM_CUDA>,
+        rm::ObjectIds<rm::VRAM_CUDA>
+        >;
+
+    // pass 1
+    rm::OnDnModel_<rm::VRAM_CUDA> waves_gpu1;
+    {
+        waves_gpu1.width = waves.width;
+        waves_gpu1.height = waves.height;
+        waves_gpu1.range = waves.range;
+        waves_gpu1.origs = waves.origs;
+        waves_gpu1.dirs = waves.dirs;
+    }
+
+    rm::Memory<DirectedWaveAttributes, rm::VRAM_CUDA> wave_attributes_gpu1
+        = wave_attributes;
+    
+    ResT results1;
+    rm::resize_memory_bundle<rm::VRAM_CUDA>(
+        results1, waves_gpu1.width, waves_gpu1.height, 1);
+    rm::Memory<Signal, rm::VRAM_CUDA> signals1(waves_gpu1.size());
+    rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask1(waves_gpu1.size());
+    
+
+    // pass 2
+    rm::OnDnModel_<rm::VRAM_CUDA> waves_gpu2;
+    {
+        waves_gpu2.width = waves_gpu1.width;
+        waves_gpu2.height = waves_gpu1.height * 2;
+        waves_gpu2.range = waves_gpu1.range;
+        waves_gpu2.origs.resize(waves_gpu1.origs.size() * 2);
+        waves_gpu2.dirs.resize(waves_gpu1.dirs.size() * 2);
+    }
+
+    rm::Memory<DirectedWaveAttributes, rm::VRAM_CUDA> wave_attributes_gpu2(wave_attributes_gpu1.size() * 2);
+
+    ResT results2;
+    rm::resize_memory_bundle<rm::VRAM_CUDA>(
+        results2, waves_gpu2.width, waves_gpu2.height, 1);
+    rm::Memory<Signal, rm::VRAM_CUDA> signals2(waves_gpu2.size());
+    rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask2(waves_gpu2.size());
+
+    // pass 3
+    rm::OnDnModel_<rm::VRAM_CUDA> waves_gpu3;
+    {
+        waves_gpu3.width = waves_gpu2.width;
+        waves_gpu3.height = waves_gpu2.height * 2;
+        waves_gpu3.range = waves_gpu2.range;
+        waves_gpu3.origs.resize(waves_gpu2.origs.size() * 2);
+        waves_gpu3.dirs.resize(waves_gpu2.dirs.size() * 2);
+    }
+
+    rm::Memory<DirectedWaveAttributes, rm::VRAM_CUDA> wave_attributes_gpu3(wave_attributes_gpu2.size() * 2);
+
+    ResT results3;
+    rm::resize_memory_bundle<rm::VRAM_CUDA>(
+        results3, waves_gpu3.width, waves_gpu3.height, 1);
+    rm::Memory<Signal, rm::VRAM_CUDA> signals3(waves_gpu3.size());
+    rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask3(waves_gpu3.size());
+    
+    
+    
 
     
-    // rm::OnDnModel 
+    auto sim = std::make_shared<rm::OnDnSimulatorOptix>(map_gpu);
+    sim->setTsb(rm::Transform::Identity());
+    sim->setModel(waves_gpu1);
+    sim->preBuildProgram<ResT>();
 
+    rm::Transform Tsm = Tsm_last;
+    rm::Memory<rm::Transform> Tsms(1);
+    Tsms[0] = Tsm;
+
+
+    rm::StopWatch sw_radar_sim;
+    
+    double el;
+
+    // SIMULATE
+    std::cout << "Propagating " << n_rays << " waves:" << std::endl;
+
+    sw_radar_sim();
+    sim->simulate(Tsms, results1);
+    el = sw_radar_sim();
+
+    std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
+
+    sw_radar_sim();
+    move_waves(
+        waves_gpu1.origs,
+        waves_gpu1.dirs,
+        wave_attributes_gpu1,
+        results1.ranges, 
+        results1.hits);
+    el = sw_radar_sim();
+
+    std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
+
+    sw_radar_sim();
+    signal_shader(
+        materials_gpu,
+        object_materials_gpu,
+        material_id_air,
+
+        waves_gpu1.dirs,
+        wave_attributes_gpu1,
+        results1.hits,
+        results1.normals,
+        results1.object_ids,
+        
+        signals1
+    );
+    el = sw_radar_sim();
+    std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
+    
+    sw_radar_sim();
+    // FRESNEL SPLIT
+    el = sw_radar_sim();
+    std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
+    
+    sw_radar_sim();
+    sim->setModel(waves_gpu3);
+    el = sw_radar_sim();
+
+    std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
+    
+    
 }
 
 void simulateImageCuda()

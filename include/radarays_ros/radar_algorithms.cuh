@@ -29,6 +29,27 @@ void propagate_waves(
 );
 
 
+void move_waves(
+    rm::MemoryView<rm::Vector, rm::VRAM_CUDA>& wave_origs,
+    rm::MemoryView<rm::Vector, rm::VRAM_CUDA>& wave_dirs,
+    rm::MemoryView<DirectedWaveAttributes, rm::VRAM_CUDA>& wave_attributes,
+    const rm::MemoryView<float, rm::VRAM_CUDA>& distances,
+    const rm::MemoryView<uint8_t, rm::VRAM_CUDA>& mask);
+
+void signal_shader(
+    const rm::MemView<RadarMaterial, rm::VRAM_CUDA>& materials,
+    const rm::MemView<int, rm::VRAM_CUDA>& object_materials,
+    int material_id_air,
+
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& dirs,
+    const rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& attr,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& hits,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& surface_normals,
+    const rm::MemView<unsigned int, rm::VRAM_CUDA>& object_ids,
+
+    rm::MemView<Signal, rm::VRAM_CUDA>& signals
+);
+
 } // namespace radarays_ros
 
 #endif // RADARAYS_ROS_RADAR_ALGORITHMS_CUH

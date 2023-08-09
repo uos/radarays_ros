@@ -45,6 +45,15 @@ double get_incidence_angle(
     return acos((-incidence.ray.dir).dot(surface_normal));
 }
 
+__device__ __forceinline__
+double get_incidence_angle(
+    const rm::Vector& surface_normal,
+    const rm::Vector& incidence_dir)
+{
+    return acos((-incidence_dir).dot(surface_normal));
+}
+
+
 __global__ 
 void propagate_waves_kernel(
     const RadarMaterial* materials,
@@ -291,6 +300,221 @@ void propagate_waves(
     );
 }
 
+
+__global__ 
+void move_waves_kernel(
+    rm::Vector* origs,
+    rm::Vector* dirs,
+    DirectedWaveAttributes* attr,
+    unsigned int n_waves,
+    const float* ranges,
+    const uint8_t* mask)
+{
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid < n_waves && mask[tid])
+    {
+        origs[tid] = origs[tid] + dirs[tid] * ranges[tid];
+        attr[tid].time += ranges[tid] / attr[tid].velocity;
+    }
+}
+
+void move_waves(
+    rm::MemoryView<rm::Vector, rm::VRAM_CUDA>& wave_origs,
+    rm::MemoryView<rm::Vector, rm::VRAM_CUDA>& wave_dirs,
+    rm::MemoryView<DirectedWaveAttributes, rm::VRAM_CUDA>& wave_attributes,
+    const rm::MemoryView<float, rm::VRAM_CUDA>& distances,
+    const rm::MemoryView<uint8_t, rm::VRAM_CUDA>& mask)
+{
+    constexpr unsigned int blockSize = 64;
+    const unsigned int gridSize = (wave_origs.size() + blockSize - 1) / blockSize;
+
+    move_waves_kernel<<<gridSize, blockSize>>>(
+        wave_origs.raw(),
+        wave_dirs.raw(),
+        wave_attributes.raw(),
+        wave_origs.size(),
+        distances.raw(),
+        mask.raw()
+    );
+}
+
+
+__global__ 
+void signal_shader_kernel(
+    const RadarMaterial* materials,
+    const int* object_materials,
+    int material_id_air,
+
+    const rm::Vector* dirs,
+    const DirectedWaveAttributes* attr,
+    unsigned int n_waves,
+
+    const uint8_t* hits,
+    const rm::Vector* surface_normals,
+    const unsigned int* object_ids,
+
+    Signal* signals
+    )
+{
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid < n_waves && hits[tid])
+    {
+        const rm::Vector incidence_dir = dirs[tid];
+        const DirectedWaveAttributes incidence_attr = attr[tid];
+        rm::Vector surface_normal = surface_normals[tid];
+        const unsigned int obj_id = object_ids[tid];
+
+        // 2. split to reflection and refraction
+        DirectedWaveAttributes reflection_attr = incidence_attr;
+        DirectedWaveAttributes refraction_attr = incidence_attr;
+        
+
+        // if wave was in air, switch to new material
+        // else if wave was in material, switch to air (is this right ?)
+        if(incidence_attr.material_id == material_id_air)
+        {
+            refraction_attr.material_id = object_materials[obj_id];
+        } else {
+            refraction_attr.material_id = material_id_air;
+        }
+
+        float v_refraction = 1.0;
+
+        if(incidence_attr.material_id != refraction_attr.material_id)
+        {
+            v_refraction = materials[refraction_attr.material_id].velocity;
+        } else {
+            v_refraction = incidence_attr.velocity;
+        }
+
+        // 3. fresnel
+        {
+            const double v1 = incidence_attr.velocity;
+            const double v2 = v_refraction;
+
+            const double n1 = v2;
+            const double n2 = v1;
+
+            double incidence_angle = acos((-incidence_dir).dot(surface_normal));
+            
+            // refraction
+            rm::Vector refraction_dir = rmagine::Vector::Zeros();
+            refraction_attr.velocity = v2;
+
+            if(n1 > 0.0)
+            {
+                double n21 = n2 / n1;
+                double angle_limit = 100.0;
+
+                if(abs(n21) <= 1.0)
+                {
+                    angle_limit = asin(n21);
+                }
+
+                if(incidence_angle <= angle_limit)
+                {
+                    if(surface_normal.dot(incidence_dir) > 0.0)
+                    {
+                        surface_normal = -surface_normal;
+                    }
+                    if(n2 > 0.0)
+                    {
+                        double n12 = n1 / n2;
+                        double c = cos(incidence_angle);
+                        refraction_dir = incidence_dir * n12 
+                                        + surface_normal * (n12 * c - sqrt(1 - n12*n12 * ( 1 - c*c ) ) );
+                    }
+                }
+            }
+            
+            // // energy
+            double refraction_angle = acos((refraction_dir).dot(-surface_normal));
+
+            double rs = 0.0;
+            double rp = 0.0;
+            double eps = 0.0001;
+            
+            if(incidence_angle + refraction_angle < eps)
+            {
+                rs = (n1 - n2) / (n1 + n2);
+                rp = rs;
+            } else if(incidence_angle + refraction_angle > M_PI - eps) {
+                rs = 1.0;
+                rp = 1.0;
+            } else {
+                rs = -sin(incidence_angle - refraction_angle) / sin(incidence_angle + refraction_angle);
+                rp = tan(incidence_angle - refraction_angle) / tan(incidence_angle + refraction_angle);
+            }
+
+            double Rs = rs * rs;
+            double Rp = rp * rp;
+            
+            double Reff = incidence_attr.polarization * Rs 
+                + (1.0 - incidence_attr.polarization) * Rp;
+
+            reflection_attr.energy = Reff * incidence_attr.energy;
+        }
+
+        // there is some energy reflected, so let it return
+        {
+            // 1. signal travelling back along the pass
+            auto material = materials[refraction_attr.material_id];
+            double incidence_angle = get_incidence_angle(
+                surface_normal, incidence_dir);
+             // 1. signal traveling over path
+            double return_energy_path = back_reflection_shader(
+                incidence_angle,
+                reflection_attr.energy,
+                material.ambient, // ambient
+                material.diffuse, // diffuse
+                material.specular // specular
+            );
+
+            float time_back = incidence_attr.time * 2.0;
+
+            Signal sig;
+            sig.time = incidence_attr.time * 2.0;
+            sig.strength = return_energy_path;
+            signals[tid] = sig;
+        }
+    
+
+    }
+}
+
+
+void signal_shader(
+    const rm::MemView<RadarMaterial, rm::VRAM_CUDA>& materials,
+    const rm::MemView<int, rm::VRAM_CUDA>& object_materials,
+    int material_id_air,
+
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& dirs,
+    const rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& attr,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& hits,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& surface_normals,
+    const rm::MemView<unsigned int, rm::VRAM_CUDA>& object_ids,
+
+    rm::MemView<Signal, rm::VRAM_CUDA>& signals)
+{
+    constexpr unsigned int blockSize = 64;
+    const unsigned int gridSize = (dirs.size() + blockSize - 1) / blockSize;
+
+    signal_shader_kernel<<<gridSize, blockSize>>>(
+        materials.raw(),
+        object_materials.raw(),
+        material_id_air,
+
+        dirs.raw(),
+        attr.raw(),
+        dirs.size(),
+        
+        hits.raw(),
+        surface_normals.raw(),
+        object_ids.raw(),
+
+        signals.raw()
+    );
+}
 
 
 } // namespace radarays_ros

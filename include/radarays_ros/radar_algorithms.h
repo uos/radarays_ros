@@ -9,6 +9,7 @@
 #include <rmagine/types/sensor_models.h>
 #include <rmagine/types/Memory.hpp>
 
+namespace rm = rmagine;
 
 namespace radarays_ros
 {
@@ -240,6 +241,13 @@ rmagine::Quaternion polar_to_quat(
 
 std::vector<DirectedWave> sample_cone(
     const DirectedWave& wave_mean, 
+    float width,
+    int n_samples,
+    int sample_dist,
+    float p_in_cone);
+
+rm::Memory<rm::Vector> sample_cone(
+    const rm::Vector& ray_dir_mean, 
     float width,
     int n_samples,
     int sample_dist,

@@ -26,6 +26,40 @@ struct Signal
     double strength;
 };
 
+struct DirectedWaveAttributes
+{
+    // !!Not!! energy of wave ( E = h * v / l ). 
+    // INSTEAD: user defined energy. 
+    double energy;
+    // ratio of s-polarized and p-polarized
+    // 1.0: only s-polarized waves
+    // 0.0: only p-polarized waves
+    // 0.5: unpolarized
+    double polarization;
+    // velocity (normally given in [m/ns])
+    double velocity;
+    // frequency of wave (GHz)
+    double frequency;
+    
+    // time of travelling [ns?]
+    double time;
+
+    // current medium (is this redundant with velocity?)
+    unsigned int material_id;
+
+
+    static DirectedWaveAttributes Zeros()
+    {
+        DirectedWaveAttributes ret;
+        ret.energy = 0.0;
+        ret.polarization = 0.5;
+        ret.frequency = 0.0;
+        ret.velocity = 0.0;
+        return ret;
+    }
+
+};
+
 struct DirectedWave
 {
     // origin and direction

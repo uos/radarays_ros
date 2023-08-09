@@ -293,6 +293,49 @@ std::vector<DirectedWave> sample_cone_local(
     return waves;
 }
 
+rm::Memory<rm::Vector> sample_cone(
+    const rm::Vector& ray_dir_mean, 
+    float width,
+    int n_samples,
+    int sample_dist,
+    float p_in_cone)
+{
+    rm::Memory<rm::Vector> ray_dirs(n_samples);
+
+    std::random_device                      rand_dev;
+    std::mt19937                            gen(rand_dev());
+    std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
+    std::normal_distribution<float>         dist_normal(0.0, 1.0);
+
+    float z = M_SQRT2 * erfinvf(p_in_cone);
+
+    float radius = width / 2.0;
+
+    for(size_t i=0; i<n_samples; i++)
+    {
+        float random_angle = dist_uni(gen) * 2.0f * M_PI - M_PI;
+
+        float random_radius;
+        if(sample_dist == 0) {
+            random_radius = dist_uni(gen) * radius;
+        } else if(sample_dist == 1) {
+            random_radius = sqrt(dist_uni(gen)) * radius;
+        } else if(sample_dist == 2) {
+            random_radius = (dist_normal(gen) / z) * radius;
+        } else if(sample_dist == 3) {
+            random_radius = sqrt(abs(dist_normal(gen)) / z) * radius;
+        }
+
+        float alpha = random_radius * cos(random_angle);
+        float beta = random_radius * sin(random_angle);
+
+        rmagine::EulerAngles e = {0.f, alpha, beta};
+        ray_dirs[i] = e * ray_dir_mean;
+    }
+
+    return ray_dirs;
+}
+
 std::vector<DirectedWave> sample_cone(
     const DirectedWave& wave_mean, 
     float width,

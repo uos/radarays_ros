@@ -14,7 +14,7 @@
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_400.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_600.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_800.yaml" /> -->
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_1000.yaml" />
+<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_10000.yaml" />
 
 <node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate)" />
 

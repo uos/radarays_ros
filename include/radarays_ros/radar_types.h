@@ -20,6 +20,12 @@ struct Ray
     }
 };
 
+struct Signal
+{
+    double time;
+    double strength;
+};
+
 struct DirectedWave
 {
     // origin and direction

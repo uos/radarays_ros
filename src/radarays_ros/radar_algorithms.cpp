@@ -253,7 +253,7 @@ std::vector<DirectedWave> sample_cone_local(
     float p_in_cone)
 {
     std::vector<DirectedWave> waves;
-    n_samples--;
+    // n_samples--;
 
     std::random_device                      rand_dev;
     std::mt19937                            gen(rand_dev());
@@ -264,7 +264,7 @@ std::vector<DirectedWave> sample_cone_local(
 
     float radius = width / 2.0;
 
-    for(; n_samples>0; n_samples--)
+    for(int i=0; i<n_samples; i++)
     {
         float random_angle = dist_uni(gen) * 2.0f * M_PI - M_PI;
 

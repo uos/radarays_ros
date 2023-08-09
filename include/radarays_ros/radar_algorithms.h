@@ -245,9 +245,6 @@ std::vector<DirectedWave> sample_cone(
     int sample_dist,
     float p_in_cone);
 
-
-
-
 // std::vector<std::vector<DirectedWave> > sample_cones(
 //     const std::vector<DirectedWave>& wave_means, 
 //     float width,

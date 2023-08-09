@@ -93,7 +93,7 @@ if(CUDA_FOUND)
     include_directories(${CUDA_INCLUDE_DIRS})
 endif(CUDA_FOUND)
 
-set(CUDA_FOUND 0)
+# set(CUDA_FOUND 0)
 
 
 find_package(OpenCV REQUIRED)
@@ -110,8 +110,10 @@ target_link_libraries(
 )
 
 if(CUDA_FOUND)
+message(WARNING "BUILD radarays_cuda")
     add_library(radarays_cuda SHARED
         src/radarays_ros/image_algorithms.cu
+        src/radarays_ros/radar_algorithms.cu
     )
 endif(CUDA_FOUND)
 
@@ -139,6 +141,7 @@ if(CUDA_FOUND)
     target_link_libraries(radar_simulator
         radarays_cuda
     )
+    message(WARNING "LINK radarays_cuda")
 endif(CUDA_FOUND)
 
 add_executable(ray_reflection_test src/ray_reflection_test.cpp)

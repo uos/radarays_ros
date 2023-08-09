@@ -27,6 +27,7 @@
 
 #include <radarays_ros/GetRadarParams.h>
 #include <radarays_ros/image_algorithms.h>
+#include <radarays_ros/radar_algorithms.cuh>
 
 
 #include <opencv2/highgui.hpp>
@@ -42,11 +43,6 @@ using namespace radarays_ros;
 
 namespace rm = rmagine;
 
-struct Signal
-{
-    double time;
-    double strength;
-};
 
 // parameters
 static RadarModel default_params_model()
@@ -84,6 +80,9 @@ rm::EmbreeMapPtr map;
 std::unordered_map<unsigned int, rm::OnDnSimulatorEmbreePtr> sims;
 rm::SphericalModel radar_model;
 
+rm::OptixMapPtr map_gpu;
+std::unordered_map<unsigned int, rm::OnDnSimulatorOptixPtr> sims_gpu;
+
 
 
 // STATE
@@ -101,7 +100,7 @@ std::shared_ptr<ros::NodeHandle> nh_p;
 int material_id_air = 0;
 std::vector<int> object_materials;
 
-
+float wave_energy_threshold = 0.001;
 std::vector<DirectedWave> waves_start;
 bool resample = true;
 
@@ -115,12 +114,6 @@ cv::cuda::GpuMat perlin_noise_buffer_cuda;
 
 
 // intersection attributes
-using ResT = rm::Bundle<
-    rm::Hits<rm::RAM>,
-    rm::Ranges<rm::RAM>,
-    rm::Normals<rm::RAM>,
-    rm::ObjectIds<rm::RAM> // connection to material
->;
 
 
 
@@ -329,22 +322,214 @@ bool updateTsm()
     return true;
 }
 
+rm::Memory<unsigned char, rm::VRAM_CUDA> polar_image_cuda;
+rm::Memory<float, rm::VRAM_CUDA> signals_cuda;
+rm::Memory<bool, rm::VRAM_CUDA> signals_mask_cuda;
+
+void simulateImageCuda()
+{
+    // 
+    if(polar_image.rows != cfg.n_cells)
+    {
+        std::cout << "Resize canvas" << std::endl;
+        polar_image.resize(cfg.n_cells);
+        polar_image_cuda.resize(cfg.n_cells * 400);
+        std::cout << "Resizing canvas - done." << std::endl;
+    }
+
+    std::vector<float> denoising_weights;
+    int denoising_mode = 0;
+
+    if(cfg.signal_denoising > 0)
+    {
+        // std::cout << "Signal Denoising: ";
+        if(cfg.signal_denoising == 1)
+        {
+            // std::cout << "Triangular";
+            denoising_mode = cfg.signal_denoising_triangular_mode * cfg.signal_denoising_triangular_width;
+            denoising_weights = make_denoiser_triangular(
+                cfg.signal_denoising_triangular_width,
+                denoising_mode
+            );
+            
+        } else if(cfg.signal_denoising == 2) {
+            // std::cout << "Gaussian";
+            denoising_mode = cfg.signal_denoising_gaussian_mode * cfg.signal_denoising_gaussian_width;
+            denoising_weights = make_denoiser_gaussian(
+                cfg.signal_denoising_gaussian_width,
+                denoising_mode
+            );
+
+        } else if(cfg.signal_denoising == 3) {
+            // std::cout << "Maxwell Boltzmann";
+            denoising_mode = cfg.signal_denoising_mb_mode * cfg.signal_denoising_mb_width;
+            denoising_weights = make_denoiser_maxwell_boltzmann(
+                cfg.signal_denoising_mb_width,
+                denoising_mode
+            );
+        }
+        // std::cout << std::endl;
+
+        // scale so that mode has weight 1
+        // if(false)
+        if(denoising_weights.size() > 0)
+        {
+            double denoising_mode_val = denoising_weights[denoising_mode];
+
+            for(size_t i=0; i<denoising_weights.size(); i++)
+            {
+                denoising_weights[i] /= denoising_mode_val;
+            }
+        }
+    }
+
+    DirectedWave wave;
+    wave.energy       =  1.0;
+    wave.polarization =  0.5;
+    wave.frequency    = 76.5; // GHz
+    wave.velocity     =  0.3; // m / ns - speed in air
+    wave.material_id  =  0;   // air
+    wave.time         =  0.0; // ns
+    wave.ray.orig = {0.0, 0.0, 0.0};
+    wave.ray.dir = {1.0, 0.0, 0.0};
+
+    int n_cells = polar_image.rows;
+    int n_angles = polar_image.cols;
+
+    // without motion: update Tsm only once
+    if(!updateTsm())
+    {
+        std::cout << "Couldn't get Transform between sensor and map. Skipping..." << std::endl;
+        return;
+    }
+
+    if(resample)
+    {
+        waves_start = sample_cone_local(
+            wave,
+            params.model.beam_width,
+            params.model.n_samples,
+            cfg.beam_sample_dist,
+            cfg.beam_sample_dist_normal_p_in_cone);
+        resample = false;
+    }
+
+    // compute maximum number of signals
+
+    // #pragma omp parallel for
+
+    for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
+    {
+        std::cout << "Angle " << angle_id << std::endl;
+        int tid = omp_get_thread_num();
+
+        auto sims_it = sims_gpu.find(tid);
+        if(sims_gpu.find(tid) == sims_gpu.end())
+        {
+            sims_gpu[tid] = std::make_shared<rm::OnDnSimulatorOptix>(map_gpu);
+            sims_it = sims_gpu.find(tid);
+            auto Tsb = rm::Transform::Identity();
+            sims_it->second->setTsb(Tsb);
+
+            #pragma omp critical
+            std::cout << "Created new simulator for thread " << tid << std::endl; 
+        }
+        auto sim = sims_it->second;
+
+        // rm::Memory<DirectedWave, rm::VRAM_CUDA> waves;
+
+        std::vector<DirectedWave> waves = waves_start;
+        rm::OnDnModel model = make_model(waves);
+        // BAD: upload N rays
+        sim->setModel(model);
+
+        rm::Transform Tas;
+        Tas.R = rm::EulerAngles{0.0, 0.0, radar_model.getTheta(angle_id)};
+        Tas.t = radar_model.getOrigin(0, angle_id);
+
+        rm::Transform Tsm = Tsm_last;
+        rm::Transform Tam = Tsm * Tas;
+        
+        rm::Memory<rm::Transform> Tams(1);
+        Tams[0] = Tam;
+
+        using ResT = rm::Bundle<
+                rm::Hits<rm::VRAM_CUDA>,
+                rm::Ranges<rm::VRAM_CUDA>,
+                rm::Normals<rm::VRAM_CUDA>,
+                rm::ObjectIds<rm::VRAM_CUDA> // connection to material
+            >;
+
+        ResT results;
+
+        results.hits.resize(model.size());
+        results.ranges.resize(model.size());
+        results.normals.resize(model.size());
+        results.object_ids.resize(model.size());
+        
+        // #pragma omp critical
+        // std::cout << "TID " << tid << " sim!" << std::endl; 
+
+        sim->simulate(Tams, results);
+
+        rm::Memory<DirectedWave, rm::RAM_CUDA> waves2(waves.size());
+        for(size_t i=0; i<waves.size(); i++)
+        {
+            waves2[i] = waves[i];
+        }
+        rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_gpu = waves2;
+
+        rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
+        for(size_t i=0; i<object_materials.size(); i++)
+        {
+            object_materials2[i] = object_materials[i];
+        }
+        rm::Memory<int, rm::VRAM_CUDA> object_materials_gpu = object_materials2;
+
+        rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(params.materials.data.size());
+        for(size_t i=0; i<params.materials.data.size(); i++)
+        {
+            materials2[i] = params.materials.data[i];
+        }
+        rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
+
+        rm::Memory<Signal, rm::VRAM_CUDA> signals(waves.size());
+        rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_new(waves.size() * 2);
+        rm::Memory<uint8_t, rm::VRAM_CUDA> waves_new_mask(waves.size() * 2);
+
+        propagate_waves(
+                materials_gpu,
+                object_materials_gpu,
+                material_id_air,
+
+                waves_gpu,
+                results.hits, 
+                results.ranges, 
+                results.normals, 
+                results.object_ids,
+                
+                signals,
+                waves_new,
+                waves_new_mask);
+    }
+
+
+
+}
 
 void simulateImage2()
 {
-    float wave_energy_threshold = 0.001;
-
     if(polar_image.rows != cfg.n_cells)
     {
         // polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
         std::cout << "Resize canvas" << std::endl;
 
         polar_image.resize(cfg.n_cells);
-        perlin_noise_buffer.resize(cfg.n_cells);
+        // perlin_noise_buffer.resize(cfg.n_cells);
 
-        #if defined WITH_CUDA
-        perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
-        #endif // defined WITH_CUDA
+        // #if defined WITH_CUDA
+        // perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
+        // #endif // defined WITH_CUDA
         
         std::cout << "Resizing canvas - done." << std::endl;
     }
@@ -406,8 +591,6 @@ void simulateImage2()
     // }
     // std::cout << std::endl;
 
-    // gen ambient noise
-    bool static_tf = true;
 
     // rm::StopWatch sw;
     // double el;
@@ -464,10 +647,6 @@ void simulateImage2()
     #pragma omp parallel for if(!cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
-        // #if defined MEASURE_TIME_INNER
-        // rm::StopWatchHR sw_inner;
-        // sw_inner();
-        // #endif // MEASURE_TIME_INNER
 
         int tid = 0;
         if(!cfg.include_motion)
@@ -533,11 +712,20 @@ void simulateImage2()
         /// 1. Signal generation
         for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
         {
+            using ResT = rm::Bundle<
+                rm::Hits<rm::RAM>,
+                rm::Ranges<rm::RAM>,
+                rm::Normals<rm::RAM>,
+                rm::ObjectIds<rm::RAM> // connection to material
+            >;
+
             ResT results;
+
             results.hits.resize(model.size());
             results.ranges.resize(model.size());
             results.normals.resize(model.size());
             results.object_ids.resize(model.size());
+            
             sim->simulate(Tams, results);
             
             // reflect / refract / absorb / return
@@ -606,7 +794,7 @@ void simulateImage2()
                     
                     if(reflection.material_id == material_id_air)
                     {
-                        // 1. signal travelling back along the pass
+                        // 1. signal travelling back along the path
 
                         auto material = params.materials.data[refraction.material_id];
 
@@ -1009,6 +1197,7 @@ int main_publisher(int argc, char** argv)
     std::cout << "SPEED IN AIR: " << params.materials.data[material_id_air].velocity << std::endl;
 
     map = rm::import_embree_map(map_file);
+    map_gpu = rm::import_optix_map(map_file);
 
     // offset of sensor center to frame
     // auto Tsb = rm::Transform::Identity();
@@ -1053,9 +1242,9 @@ int main_publisher(int argc, char** argv)
     // polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
     // perlin_noise_buffer = cv::Mat_<float>(n_cells, radar_model.theta.size);
 
-    #if defined WITH_CUDA
-    perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
-    #endif // defined WITH_CUDA
+    // #if defined WITH_CUDA
+    // perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
+    // #endif // defined WITH_CUDA
 
     ros::Rate r(100);
 
@@ -1063,7 +1252,12 @@ int main_publisher(int argc, char** argv)
     {
         loadParameters();
         // ROS_INFO("Simulate!");
-        simulateImage2();
+
+        // CPU
+        // simulateImage2();
+
+        // GPU
+        simulateImageCuda();
 
         sensor_msgs::ImagePtr msg = 
             cv_bridge::CvImage(

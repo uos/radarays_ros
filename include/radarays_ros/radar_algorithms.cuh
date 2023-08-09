@@ -84,6 +84,9 @@ void draw_signals(
     int denoising_mode,
     float resolution);
 
+
+
+
 } // namespace radarays_ros
 
 #endif // RADARAYS_ROS_RADAR_ALGORITHMS_CUH

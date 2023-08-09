@@ -8,6 +8,9 @@
 #include <math.h>
 #include <iostream>
 
+#include <rmagine/types/MemoryCuda.hpp>
+
+namespace rm = rmagine;
 
 namespace radarays_ros
 {
@@ -18,6 +21,14 @@ void fill_perlin_noise(
 );
 
 
+void fill_perlin_noise_hilo(
+    rm::MemView<float, rm::VRAM_CUDA>& img,
+    const rm::MemView<float, rm::VRAM_CUDA>& max_vals,
+    unsigned int width, unsigned int height,
+    double off_x, double off_y,
+    double scale_low, double scale_high,
+    double p_low
+);
 
 } // namespace radarays_ros
 

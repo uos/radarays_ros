@@ -15,8 +15,12 @@
 #include <sensor_msgs/PointCloud.h>
 
 #include <radarays_ros/radar_types.h>
-#include <radarays_ros/radar_algorithms.h>
+
 #include <radarays_ros/radar_math.h>
+#include <radarays_ros/image_algorithms.h>
+#include <radarays_ros/radar_algorithms.h>
+#include <radarays_ros/image_algorithms.cuh>
+#include <radarays_ros/radar_algorithms.cuh>
 
 
 #include <radarays_ros/RadarParams.h>
@@ -26,18 +30,12 @@
 
 
 #include <radarays_ros/GetRadarParams.h>
-#include <radarays_ros/image_algorithms.h>
-#include <radarays_ros/radar_algorithms.cuh>
+
 
 
 #include <opencv2/highgui.hpp>
 
 #include <omp.h>
-
-#if defined WITH_CUDA
-#include <opencv2/core/cuda.hpp>
-#endif // defined WITH_CUDA
-
 
 using namespace radarays_ros;
 
@@ -839,10 +837,34 @@ void simulateImageCuda2()
 
 
     // 3. ambient noise
+    sw();
+    if(cfg.ambient_noise)
     {
+        std::random_device                      rand_dev;
+        std::mt19937                            gen(rand_dev());
+        std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
 
+        
+        // apply noise
+        // low freq perlin
+        double scale_lo = 0.05;
+        // high freq perlin
+        double scale_hi = 0.2;
+        double p_low = 0.9;
+
+        double random_begin = dist_uni(gen) * 1000.0;
+
+        fill_perlin_noise_hilo(
+            img, max_vals,
+            n_angles, n_cells,
+            random_begin, 0.0,
+            scale_lo, scale_hi,
+            p_low
+        );
+        cudaDeviceSynchronize();
     }
-
+    el = sw();
+    std::cout << "- Noise ambient: " << el << "s" << std::endl;
 
 
 
@@ -1528,7 +1550,7 @@ void simulateImage2()
             
             for(size_t i=0; i<slice.rows; i++)
             {
-                float signal = slice.at<float>(i) * cfg.energy_max;
+                float signal = slice.at<float>(i);
 
                 double p;
 

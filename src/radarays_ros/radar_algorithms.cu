@@ -197,15 +197,12 @@ void propagate_waves_kernel(
             rp = tan(incidence_angle - refraction_angle) / tan(incidence_angle + refraction_angle);
         }
 
-        double sp_ratio = 0.5;
-
         double Rs = rs * rs;
         double Rp = rp * rp;
         
-        double Reff = incidence.polarization * Rs + (1.0 - incidence.polarization) * Rp;
+        double Reff = incidence.polarization * Rs 
+            + (1.0 - incidence.polarization) * Rp;
         
-        double Ts   = 1.0 - Rs;
-        double Tp   = 1.0 - Rp;
         double Teff = 1.0 - Reff;
 
         reflection.energy = Reff * incidence.energy;
@@ -357,6 +354,7 @@ void signal_shader_kernel(
     )
 {
     unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+
     if(tid < n_waves && hits[tid])
     {
         const rm::Vector incidence_dir = dirs[tid];
@@ -483,6 +481,10 @@ void signal_shader_kernel(
 }
 
 
+
+
+
+
 void signal_shader(
     const rm::MemView<RadarMaterial, rm::VRAM_CUDA>& materials,
     const rm::MemView<int, rm::VRAM_CUDA>& object_materials,
@@ -516,6 +518,338 @@ void signal_shader(
     );
 }
 
+
+
+__global__ 
+void fresnel_split_kernel(
+    const RadarMaterial* materials,
+    const int* object_materials,
+    int material_id_air,
+    // INCIDENCE
+    const rm::Vector* incidence_origs,
+    const rm::Vector* incidence_dirs,
+    const DirectedWaveAttributes* incidence_attrs,
+    unsigned int n_incidences,
+    const uint8_t* hits,
+    const rm::Vector* surface_normals,
+    const unsigned int* object_ids,
+    // SPLIT
+    rm::Vector* reflection_origs,
+    rm::Vector* reflection_dirs,
+    DirectedWaveAttributes* reflection_attrs,
+    rm::Vector* refraction_origs,
+    rm::Vector* refraction_dirs,
+    DirectedWaveAttributes* refraction_attrs
+    )
+{
+    unsigned int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if(tid < n_incidences)
+    {
+        if(hits[tid] == 0)
+        {
+            reflection_origs[tid] = incidence_origs[tid];
+            reflection_dirs[tid] = rm::Vector::Zeros();
+            refraction_origs[tid] = incidence_origs[tid];
+            refraction_dirs[tid] = rm::Vector::Zeros();
+            return;
+        }
+
+        const rm::Vector incidence_orig = incidence_origs[tid];
+        const rm::Vector incidence_dir = incidence_dirs[tid];
+        const DirectedWaveAttributes incidence_attr = incidence_attrs[tid];
+        rm::Vector surface_normal = surface_normals[tid];
+        const unsigned int obj_id = object_ids[tid];
+
+        // 2. split to reflection and refraction
+        
+        rm::Vector reflection_orig = incidence_orig;
+        rm::Vector reflection_dir = rm::Vector::Zeros();
+        DirectedWaveAttributes reflection_attr = incidence_attr;
+        rm::Vector refraction_orig = incidence_orig;
+        rm::Vector refraction_dir = rm::Vector::Zeros();
+        DirectedWaveAttributes refraction_attr = incidence_attr;
+        
+
+        // if wave was in air, switch to new material
+        // else if wave was in material, switch to air (is this right ?)
+        if(incidence_attr.material_id == material_id_air)
+        {
+            refraction_attr.material_id = object_materials[obj_id];
+        } else {
+            refraction_attr.material_id = material_id_air;
+        }
+
+        float v_refraction = 1.0;
+
+        if(incidence_attr.material_id != refraction_attr.material_id)
+        {
+            v_refraction = materials[refraction_attr.material_id].velocity;
+        } else {
+            v_refraction = incidence_attr.velocity;
+        }
+
+        // 3. fresnel
+        {
+            const double v1 = incidence_attr.velocity;
+            const double v2 = v_refraction;
+
+            const double n1 = v2;
+            const double n2 = v1;
+
+            double incidence_angle = acos((-incidence_dir).dot(surface_normal));
+
+            // reflection
+            reflection_dir = incidence_dir + surface_normal * 2.0 * (-surface_normal).dot(incidence_dir);
+
+            // refraction
+            refraction_attr.velocity = v2;
+
+            if(n1 > 0.0)
+            {
+                double n21 = n2 / n1;
+                double angle_limit = 100.0;
+
+                if(abs(n21) <= 1.0)
+                {
+                    angle_limit = asin(n21);
+                }
+
+                if(incidence_angle <= angle_limit)
+                {
+                    if(surface_normal.dot(incidence_dir) > 0.0)
+                    {
+                        surface_normal = -surface_normal;
+                    }
+                    if(n2 > 0.0)
+                    {
+                        double n12 = n1 / n2;
+                        double c = cos(incidence_angle);
+                        refraction_dir = incidence_dir * n12 
+                                        + surface_normal * (n12 * c - sqrt(1 - n12*n12 * ( 1 - c*c ) ) );
+                    }
+                }
+            }
+            
+            // // energy
+            double refraction_angle = acos((refraction_dir).dot(-surface_normal));
+
+            double rs = 0.0;
+            double rp = 0.0;
+            double eps = 0.0001;
+            
+            if(incidence_angle + refraction_angle < eps)
+            {
+                rs = (n1 - n2) / (n1 + n2);
+                rp = rs;
+            } else if(incidence_angle + refraction_angle > M_PI - eps) {
+                rs = 1.0;
+                rp = 1.0;
+            } else {
+                rs = -sin(incidence_angle - refraction_angle) / sin(incidence_angle + refraction_angle);
+                rp = tan(incidence_angle - refraction_angle) / tan(incidence_angle + refraction_angle);
+            }
+
+            double Rs = rs * rs;
+            double Rp = rp * rp;
+            
+            double Reff = incidence_attr.polarization * Rs 
+                + (1.0 - incidence_attr.polarization) * Rp;
+            double Teff = 1.0 - Reff;
+
+            reflection_attr.energy = Reff * incidence_attr.energy;
+            refraction_attr.energy = Teff * incidence_attr.energy;
+
+        }
+
+    
+        // move
+        const float skip_dist = 0.001;
+
+        { // move reflection ray a bit
+            reflection_orig = reflection_orig + reflection_dir * skip_dist;
+            reflection_attr.time += skip_dist / reflection_attr.velocity;
+        }
+
+        { // move refraction ray a bit
+            refraction_orig = refraction_orig + refraction_dir * skip_dist;
+            refraction_attr.time += skip_dist / refraction_attr.velocity;
+        }
+
+        // write back
+        reflection_origs[tid] = reflection_orig;
+        reflection_dirs[tid] = reflection_dir;
+        reflection_attrs[tid] = reflection_attr;
+
+        refraction_origs[tid] = refraction_orig;
+        refraction_dirs[tid] = refraction_dir;
+        refraction_attrs[tid] = refraction_attr;
+    }
+}
+
+
+void fresnel_split(
+    const rm::MemView<RadarMaterial, rm::VRAM_CUDA>& materials,
+    const rm::MemView<int, rm::VRAM_CUDA>& object_materials,
+    int material_id_air,
+    // INCIDENCE
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& incidence_origs,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& incidence_dirs,
+    const rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& incidence_attrs,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& hits,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& surface_normals,
+    const rm::MemView<unsigned int, rm::VRAM_CUDA>& object_ids,
+    // SPLIT
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& reflection_origs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& reflection_dirs,
+    rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& reflection_attrs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& refraction_origs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& refraction_dirs,
+    rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& refraction_attrs)
+{
+    constexpr unsigned int blockSize = 64;
+    const unsigned int gridSize = (incidence_origs.size() + blockSize - 1) / blockSize;
+
+    fresnel_split_kernel<<<gridSize, blockSize>>>(
+        materials.raw(),
+        object_materials.raw(),
+        material_id_air,
+        // INCIDENCE
+        incidence_origs.raw(),
+        incidence_dirs.raw(),
+        incidence_attrs.raw(),
+        incidence_origs.size(),
+        hits.raw(),
+        surface_normals.raw(),
+        object_ids.raw(),
+        // SPLIT
+        reflection_origs.raw(),
+        reflection_dirs.raw(),
+        reflection_attrs.raw(),
+        refraction_origs.raw(),
+        refraction_dirs.raw(),
+        refraction_attrs.raw()
+    );
+}
+
+__global__ 
+void draw_signals_kernel(
+    float* img,
+    float* max_vals,
+    unsigned int* signal_counts,
+    unsigned int n_angles,
+    unsigned int n_cells,
+    const Signal* signals,
+    const uint8_t* mask,
+    unsigned int n_samples,
+    const unsigned int denoising_type,
+    const float* denoising_weights,
+    unsigned int n_denoising_weights,
+    int denoising_mode,
+    float resolution)
+{
+    unsigned int angle_id = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int n_signals = n_angles * n_samples;
+
+
+
+    // angles are hid (horizontal)
+    if(angle_id < n_angles)
+    {
+        float max_val = max_vals[angle_id];
+        unsigned int signal_count = signal_counts[angle_id];
+
+        // sample is vid (vertical)
+        for(unsigned int sample_id=0; sample_id<n_samples; sample_id++)
+        {
+            unsigned int signal_id = sample_id * n_angles + angle_id;
+            if(mask[signal_id])
+            {
+                const Signal signal = signals[signal_id];
+
+                float half_time = signal.time / 2.0;
+                float signal_dist = 0.3 * half_time;
+
+                int cell = static_cast<int>(signal_dist / resolution);
+
+                if(cell < n_cells)
+                {
+                    if(denoising_type > 0)
+                    {
+                        for(int vid = 0; vid < n_denoising_weights; vid++)
+                        {
+                            int glob_id = vid + cell - denoising_mode;
+                            if(glob_id > 0 && glob_id < n_cells)
+                            {
+                                // TODO: check this
+                                float old_val = img[glob_id * n_angles + angle_id];
+                                float new_val = old_val + signal.strength * denoising_weights[vid];
+                                img[glob_id * n_angles + angle_id] = new_val;
+
+                                if(new_val > max_val)
+                                {
+                                    max_val = new_val;
+                                }
+                            }
+                        }
+                    } else {
+                        // read 
+                        // TODO: check this
+                        float old_val = img[cell * n_angles + angle_id];
+                        float new_val = max( old_val, (float)signal.strength);
+                        img[cell * n_angles + angle_id] = new_val;
+
+                        if(new_val > max_val)
+                        {
+                            max_val = new_val;
+                        }
+                    }
+
+                    signal_count++;
+                }
+
+            }
+        }
+
+        max_vals[angle_id] = max_val;
+        signal_counts[angle_id] = signal_count;
+    }
+}
+
+
+void draw_signals(
+    rm::MemView<float, rm::VRAM_CUDA>& img,
+    rm::MemView<float, rm::VRAM_CUDA>& max_vals,
+    rm::MemView<unsigned int, rm::VRAM_CUDA>& signal_counts,
+    unsigned int n_angles,
+    unsigned int n_cells,
+    const rm::MemView<Signal, rm::VRAM_CUDA>& signals,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& mask,
+    unsigned int n_samples,
+    const unsigned int denoising_type,
+    const rm::MemView<float, rm::VRAM_CUDA> denoising_weights,
+    int denoising_mode,
+    float resolution)
+{
+    constexpr unsigned int blockSize = 64;
+    const unsigned int gridSize = (n_angles + blockSize - 1) / blockSize;
+
+    draw_signals_kernel<<<gridSize, blockSize>>>(
+        img.raw(),
+        max_vals.raw(),
+        signal_counts.raw(),
+        n_angles,
+        n_cells,
+        signals.raw(),
+        mask.raw(),
+        n_samples,
+        denoising_type,
+        denoising_weights.raw(),
+        denoising_weights.size(),
+        denoising_mode,
+        resolution
+    );
+
+}
 
 } // namespace radarays_ros
 

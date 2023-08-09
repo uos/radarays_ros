@@ -430,11 +430,23 @@ void simulateImageCuda2()
     }
     rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
 
+    
+    rm::Memory<float, rm::VRAM_CUDA> denoising_weights_gpu;
+    if(denoising_weights.size())
+    {
+        rm::Memory<float, rm::RAM_CUDA> denoising_weights2(denoising_weights.size());
+        for(size_t i=0; i<denoising_weights.size(); i++)
+        {
+            denoising_weights2[i] = denoising_weights[i];
+        }
+        denoising_weights_gpu = denoising_weights2;
+    }
+    
 
     // prepare radar model
 
     size_t n_rays = n_angles * cfg.n_samples;
-    std::cout << "Waves: " << n_rays << std::endl;
+    // std::cout << "Waves: " << n_rays << std::endl;
     
     
     rm::OnDnModel waves;
@@ -457,7 +469,7 @@ void simulateImageCuda2()
         cfg.beam_sample_dist_normal_p_in_cone
     );
 
-    std::cout << "Filling Model" << std::endl;
+    // std::cout << "Filling Model" << std::endl;
 
     for(size_t angle_id=0; angle_id<n_angles; angle_id++)
     {
@@ -478,7 +490,7 @@ void simulateImageCuda2()
 
     }
 
-    std::cout << "Done filling model" << std::endl;
+    // std::cout << "Done filling model" << std::endl;
     
     
 
@@ -492,6 +504,7 @@ void simulateImageCuda2()
         rm::Normals<rm::VRAM_CUDA>,
         rm::ObjectIds<rm::VRAM_CUDA>
         >;
+
 
     // pass 1
     rm::OnDnModel_<rm::VRAM_CUDA> waves_gpu1;
@@ -549,73 +562,291 @@ void simulateImageCuda2()
     rm::Memory<Signal, rm::VRAM_CUDA> signals3(waves_gpu3.size());
     rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask3(waves_gpu3.size());
     
-    
-    
-
-    
     auto sim = std::make_shared<rm::OnDnSimulatorOptix>(map_gpu);
     sim->setTsb(rm::Transform::Identity());
-    sim->setModel(waves_gpu1);
     sim->preBuildProgram<ResT>();
 
     rm::Transform Tsm = Tsm_last;
     rm::Memory<rm::Transform> Tsms(1);
     Tsms[0] = Tsm;
 
+    sim->setModel(waves_gpu1);
 
-    rm::StopWatch sw_radar_sim;
-    
-    double el;
+    rm::StopWatch sw;
+        double el_tot = 0.0;
+        double el;
 
-    // SIMULATE
-    std::cout << "Propagating " << n_rays << " waves:" << std::endl;
-
-    sw_radar_sim();
-    sim->simulate(Tsms, results1);
-    el = sw_radar_sim();
-
-    std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
-
-    sw_radar_sim();
-    move_waves(
-        waves_gpu1.origs,
-        waves_gpu1.dirs,
-        wave_attributes_gpu1,
-        results1.ranges, 
-        results1.hits);
-    el = sw_radar_sim();
-
-    std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
-
-    sw_radar_sim();
-    signal_shader(
-        materials_gpu,
-        object_materials_gpu,
-        material_id_air,
-
-        waves_gpu1.dirs,
-        wave_attributes_gpu1,
-        results1.hits,
-        results1.normals,
-        results1.object_ids,
+    // 1. Generate Signals
+    sw();
+    {
         
-        signals1
-    );
-    el = sw_radar_sim();
-    std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
-    
-    sw_radar_sim();
-    // FRESNEL SPLIT
-    el = sw_radar_sim();
-    std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
-    
-    sw_radar_sim();
-    sim->setModel(waves_gpu3);
-    el = sw_radar_sim();
+        // sw();
+        sim->simulate(Tsms, results1);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
 
-    std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
+        // sw();
+        move_waves(
+            waves_gpu1.origs,
+            waves_gpu1.dirs,
+            wave_attributes_gpu1,
+            results1.ranges, 
+            results1.hits);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+
+        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        signal_shader(
+            materials_gpu,
+            object_materials_gpu,
+            material_id_air,
+
+            waves_gpu1.dirs,
+            wave_attributes_gpu1,
+            results1.hits,
+            results1.normals,
+            results1.object_ids,
+            
+            signals1
+        );
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
+        
+        // sw();
+        {
+            auto lo = waves_gpu2.origs(0, waves_gpu1.origs.size());
+            auto ld = waves_gpu2.dirs(0, waves_gpu1.dirs.size());
+            auto la = wave_attributes_gpu2(0, wave_attributes_gpu1.size());
+            
+            auto ro = waves_gpu2.origs(waves_gpu1.origs.size(), waves_gpu1.origs.size() * 2);
+            auto rd = waves_gpu2.dirs(waves_gpu1.dirs.size(), waves_gpu1.dirs.size() * 2);
+            auto ra = wave_attributes_gpu2(wave_attributes_gpu1.size(), wave_attributes_gpu1.size() * 2);
+            
+            // FRESNEL SPLIT
+            fresnel_split(
+                materials_gpu,
+                object_materials_gpu,
+                material_id_air,
+                // INCIDENCE
+                waves_gpu1.origs,
+                waves_gpu1.dirs,
+                wave_attributes_gpu1,
+                results1.hits,
+                results1.normals,
+                results1.object_ids,
+                // SPLIT
+                lo, ld, la,
+                ro, rd, ra
+            );
+            // cudaDeviceSynchronize();
+        }
+        // el = sw(); el_tot += el;
+        // std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
+        
+        // std::cout << "- total: " << el_tot << std::endl;
+        // std::cout << "Pass 2 - Propagating " << waves_gpu2.size() << " waves:" << std::endl;
+
+        // sw();
+        sim->setModel(waves_gpu2);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
+        
+        // sw();
+        sim->simulate(Tsms, results2);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+
+        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        move_waves(
+            waves_gpu2.origs,
+            waves_gpu2.dirs,
+            wave_attributes_gpu2,
+            results2.ranges, 
+            results2.hits);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+
+        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
+        
+
+        // sw();
+        signal_shader(
+            materials_gpu,
+            object_materials_gpu,
+            material_id_air,
+
+            waves_gpu2.dirs,
+            wave_attributes_gpu2,
+            results2.hits,
+            results2.normals,
+            results2.object_ids,
+            
+            signals2
+        );
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        {
+            auto lo = waves_gpu3.origs(0, waves_gpu2.origs.size());
+            auto ld = waves_gpu3.dirs(0, waves_gpu2.dirs.size());
+            auto la = wave_attributes_gpu3(0, wave_attributes_gpu2.size());
+            
+            auto ro = waves_gpu3.origs(waves_gpu2.origs.size(), waves_gpu2.origs.size() * 2);
+            auto rd = waves_gpu3.dirs(waves_gpu2.dirs.size(), waves_gpu2.dirs.size() * 2);
+            auto ra = wave_attributes_gpu3(wave_attributes_gpu2.size(), wave_attributes_gpu2.size() * 2);
+            
+            // FRESNEL SPLIT
+            fresnel_split(
+                materials_gpu,
+                object_materials_gpu,
+                material_id_air,
+                // INCIDENCE
+                waves_gpu2.origs,
+                waves_gpu2.dirs,
+                wave_attributes_gpu2,
+                results2.hits,
+                results2.normals,
+                results2.object_ids,
+                // SPLIT
+                lo, ld, la,
+                ro, rd, ra
+            );
+            // cudaDeviceSynchronize();
+        }
+        
+        // el = sw(); el_tot += el;
+        // std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
+
+        // std::cout << "- total: " << el_tot*1000.0 << "ms" << std::endl;
+
+        // std::cout << "Pass 3 - Propagating " << waves_gpu3.size() << " waves:" << std::endl;
+        
+
+        // sw();
+        sim->setModel(waves_gpu3);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        sim->simulate(Tsms, results3);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        move_waves(
+            waves_gpu3.origs,
+            waves_gpu3.dirs,
+            wave_attributes_gpu3,
+            results3.ranges, 
+            results3.hits);
+        // cudaDeviceSynchronize();
+        // el = sw(); el_tot += el;
+
+        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
+
+        // sw();
+        signal_shader(
+            materials_gpu,
+            object_materials_gpu,
+            material_id_air,
+
+            waves_gpu3.dirs,
+            wave_attributes_gpu3,
+            results3.hits,
+            results3.normals,
+            results3.object_ids,
+            
+            signals3
+        );
+        cudaDeviceSynchronize();
+
+        
+
+        // el = sw(); el_tot += el;
+        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
+
+        // std::cout << "- total: " << el_tot*1000.0 << "ms" << std::endl;
+        
+    }
+    el = sw();
+    std::cout << "RUNTIME" << std::endl;
+    std::cout << "- Signal Gen: " << el << "s" << std::endl;
     
     
+
+
+    rm::Memory<float, rm::VRAM_CUDA> img(n_cells * n_angles);
+    rm::Memory<float, rm::VRAM_CUDA> max_vals(n_angles);
+    rm::Memory<unsigned int, rm::VRAM_CUDA> signal_counts(n_angles);
+
+    cudaMemset(img.raw(), 0, n_cells * n_angles * sizeof(float) );
+    cudaMemset(max_vals.raw(), 0, n_angles * sizeof(float) );
+    cudaMemset(signal_counts.raw(), 0, n_angles * sizeof(unsigned int) );
+
+    cudaDeviceSynchronize();
+
+    // 2. noise(signal+system) signals
+    sw();
+    {
+        // draw signals
+
+        draw_signals(img, max_vals, signal_counts,
+            n_angles, n_cells,
+            signals1, results1.hits,
+            cfg.n_samples * 1, 
+            cfg.signal_denoising,
+            denoising_weights_gpu,
+            denoising_mode,
+            cfg.resolution
+        );
+
+        draw_signals(img, max_vals, signal_counts,
+            n_angles, n_cells,
+            signals2, results2.hits,
+            cfg.n_samples * 2, 
+            cfg.signal_denoising,
+            denoising_weights_gpu,
+            denoising_mode,
+            cfg.resolution
+        );
+
+        draw_signals(img, max_vals, signal_counts,
+            n_angles, n_cells,
+            signals3, results3.hits,
+            cfg.n_samples * 4, 
+            cfg.signal_denoising,
+            denoising_weights_gpu,
+            denoising_mode,
+            cfg.resolution
+        );
+
+
+        cudaDeviceSynchronize();
+    }
+    el = sw();
+    std::cout << "- Noise signal + system: " << el << "s" << std::endl;
+
+
+    // 3. ambient noise
+    {
+
+    }
+
+
+
+
+
 }
 
 void simulateImageCuda()
@@ -1237,7 +1468,7 @@ void simulateImage2()
             int cell = static_cast<int>(signal_dist / cfg.resolution);
             if(cell < slice.rows)
             {
-                float signal_old = slice.at<float>(cell, 0);
+                // float signal_old = slice.at<float>(cell, 0);
 
                 if(cfg.signal_denoising > 0)
                 {

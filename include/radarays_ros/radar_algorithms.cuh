@@ -50,6 +50,40 @@ void signal_shader(
     rm::MemView<Signal, rm::VRAM_CUDA>& signals
 );
 
+
+void fresnel_split(
+    const rm::MemView<RadarMaterial, rm::VRAM_CUDA>& materials,
+    const rm::MemView<int, rm::VRAM_CUDA>& object_materials,
+    int material_id_air,
+    // INCIDENCE
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& incidence_origs,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& incidence_dirs,
+    const rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& incidence_attrs,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& hits,
+    const rm::MemView<rm::Vector, rm::VRAM_CUDA>& surface_normals,
+    const rm::MemView<unsigned int, rm::VRAM_CUDA>& object_ids,
+    // SPLIT
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& reflection_origs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& reflection_dirs,
+    rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& reflection_attrs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& refraction_origs,
+    rm::MemView<rm::Vector, rm::VRAM_CUDA>& refraction_dirs,
+    rm::MemView<DirectedWaveAttributes, rm::VRAM_CUDA>& refraction_attrs);
+
+void draw_signals(
+    rm::MemView<float, rm::VRAM_CUDA>& img,
+    rm::MemView<float, rm::VRAM_CUDA>& max_vals,
+    rm::MemView<unsigned int, rm::VRAM_CUDA>& signal_counts,
+    unsigned int n_angles,
+    unsigned int n_cells,
+    const rm::MemView<Signal, rm::VRAM_CUDA>& signals,
+    const rm::MemView<uint8_t, rm::VRAM_CUDA>& mask,
+    unsigned int n_samples,
+    const unsigned int denoising_type,
+    const rm::MemView<float, rm::VRAM_CUDA> denoising_weights,
+    int denoising_mode,
+    float resolution);
+
 } // namespace radarays_ros
 
 #endif // RADARAYS_ROS_RADAR_ALGORITHMS_CUH

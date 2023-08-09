@@ -436,7 +436,7 @@ void simulateImageCuda()
         }
         auto sim = sims_it->second;
 
-        // rm::Memory<DirectedWave, rm::VRAM_CUDA> waves;
+
 
         std::vector<DirectedWave> waves = waves_start;
         rm::OnDnModel model = make_model(waves);
@@ -511,6 +511,9 @@ void simulateImageCuda()
                 signals,
                 waves_new,
                 waves_new_mask);
+
+        // write back
+        
     }
 
 

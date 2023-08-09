@@ -265,7 +265,7 @@ void propagate_waves(
     rm::MemView<DirectedWave, rm::VRAM_CUDA>& waves_new,
     rm::MemView<uint8_t, rm::VRAM_CUDA>& waves_new_mask)
 {
-    propagate_waves_kernel<<<1,1>>>(
+    propagate_waves_kernel<<<waves.size(),1>>>(
         materials.raw(),
         object_materials.raw(),
         material_id_air,

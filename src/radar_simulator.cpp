@@ -326,6 +326,119 @@ rm::Memory<unsigned char, rm::VRAM_CUDA> polar_image_cuda;
 rm::Memory<float, rm::VRAM_CUDA> signals_cuda;
 rm::Memory<bool, rm::VRAM_CUDA> signals_mask_cuda;
 
+void simulateImageCuda2()
+{
+    // 
+    if(polar_image.rows != cfg.n_cells)
+    {
+        std::cout << "Resize canvas" << std::endl;
+        polar_image.resize(cfg.n_cells);
+        polar_image_cuda.resize(cfg.n_cells * 400);
+        std::cout << "Resizing canvas - done." << std::endl;
+    }
+
+
+    std::vector<float> denoising_weights;
+    int denoising_mode = 0;
+
+    if(cfg.signal_denoising > 0)
+    {
+        // std::cout << "Signal Denoising: ";
+        if(cfg.signal_denoising == 1)
+        {
+            // std::cout << "Triangular";
+            denoising_mode = cfg.signal_denoising_triangular_mode * cfg.signal_denoising_triangular_width;
+            denoising_weights = make_denoiser_triangular(
+                cfg.signal_denoising_triangular_width,
+                denoising_mode
+            );
+            
+        } else if(cfg.signal_denoising == 2) {
+            // std::cout << "Gaussian";
+            denoising_mode = cfg.signal_denoising_gaussian_mode * cfg.signal_denoising_gaussian_width;
+            denoising_weights = make_denoiser_gaussian(
+                cfg.signal_denoising_gaussian_width,
+                denoising_mode
+            );
+
+        } else if(cfg.signal_denoising == 3) {
+            // std::cout << "Maxwell Boltzmann";
+            denoising_mode = cfg.signal_denoising_mb_mode * cfg.signal_denoising_mb_width;
+            denoising_weights = make_denoiser_maxwell_boltzmann(
+                cfg.signal_denoising_mb_width,
+                denoising_mode
+            );
+        }
+        // std::cout << std::endl;
+
+        // scale so that mode has weight 1
+        // if(false)
+        if(denoising_weights.size() > 0)
+        {
+            double denoising_mode_val = denoising_weights[denoising_mode];
+
+            for(size_t i=0; i<denoising_weights.size(); i++)
+            {
+                denoising_weights[i] /= denoising_mode_val;
+            }
+        }
+    }
+
+    DirectedWave wave;
+    wave.energy       =  1.0;
+    wave.polarization =  0.5;
+    wave.frequency    = 76.5; // GHz
+    wave.velocity     =  0.3; // m / ns - speed in air
+    wave.material_id  =  0;   // air
+    wave.time         =  0.0; // ns
+    wave.ray.orig = {0.0, 0.0, 0.0};
+    wave.ray.dir = {1.0, 0.0, 0.0};
+
+    int n_cells = polar_image.rows;
+    int n_angles = polar_image.cols;
+
+    // without motion: update Tsm only once
+    if(!updateTsm())
+    {
+        std::cout << "Couldn't get Transform between sensor and map. Skipping..." << std::endl;
+        return;
+    }
+
+    if(resample)
+    {
+        waves_start = sample_cone_local(
+            wave,
+            params.model.beam_width,
+            params.model.n_samples,
+            cfg.beam_sample_dist,
+            cfg.beam_sample_dist_normal_p_in_cone);
+        resample = false;
+    }
+
+    rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
+    for(size_t i=0; i<object_materials.size(); i++)
+    {
+        object_materials2[i] = object_materials[i];
+    }
+    rm::Memory<int, rm::VRAM_CUDA> object_materials_gpu = object_materials2;
+
+    rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(params.materials.data.size());
+    for(size_t i=0; i<params.materials.data.size(); i++)
+    {
+        materials2[i] = params.materials.data[i];
+    }
+    rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
+
+    rm::StopWatch sw_radar_sim;
+    sw_radar_sim();
+
+
+
+    
+    // rm::OnDnModel 
+
+}
+
 void simulateImageCuda()
 {
     // 
@@ -1296,7 +1409,7 @@ int main_publisher(int argc, char** argv)
         // simulateImage2();
 
         // GPU
-        simulateImageCuda();
+        simulateImageCuda2();
 
         sensor_msgs::ImagePtr msg = 
             cv_bridge::CvImage(

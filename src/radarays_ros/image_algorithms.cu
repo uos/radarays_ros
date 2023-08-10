@@ -274,6 +274,26 @@ void fill_perlin_noise_hilo(
         static_cast<int>(std::ceil(height / 
             static_cast<double>(cthreads.y))));
 
+    fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
+        img.raw(), max_vals.raw(), width, height, 
+        off_x, off_y, scale_low, scale_high, p_low);
+    
+}
+
+void fill_perlin_noise_hilo(
+    rm::MemView<float, rm::UNIFIED_CUDA>& img,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& max_vals,
+    unsigned int width, unsigned int height,
+    double off_x, double off_y,
+    double scale_low, double scale_high,
+    double p_low)
+{
+    dim3 cthreads(16, 16);
+    dim3 cblocks(
+        static_cast<int>(std::ceil(width /
+            static_cast<double>(cthreads.x))),
+        static_cast<int>(std::ceil(height / 
+            static_cast<double>(cthreads.y))));
 
     fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
         img.raw(), max_vals.raw(), width, height, 

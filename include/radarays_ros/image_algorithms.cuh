@@ -30,6 +30,15 @@ void fill_perlin_noise_hilo(
     double p_low
 );
 
+void fill_perlin_noise_hilo(
+    rm::MemView<float, rm::UNIFIED_CUDA>& img,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& max_vals,
+    unsigned int width, unsigned int height,
+    double off_x, double off_y,
+    double scale_low, double scale_high,
+    double p_low
+);
+
 } // namespace radarays_ros
 
 

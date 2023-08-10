@@ -518,8 +518,6 @@ void signal_shader(
     );
 }
 
-
-
 __global__ 
 void fresnel_split_kernel(
     const RadarMaterial* materials,

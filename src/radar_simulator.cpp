@@ -327,7 +327,7 @@ rm::Memory<bool, rm::VRAM_CUDA> signals_mask_cuda;
 
 
 
-void simulateImageCuda2()
+void simulateImageGPU()
 {
     // 
     if(polar_image.rows != cfg.n_cells)
@@ -402,17 +402,6 @@ void simulateImageCuda2()
         std::cout << "Couldn't get Transform between sensor and map. Skipping..." << std::endl;
         return;
     }
-
-    // if(resample)
-    // {
-    //     waves_start = sample_cone_local(
-    //         wave,
-    //         params.model.beam_width,
-    //         params.model.n_samples,
-    //         cfg.beam_sample_dist,
-    //         cfg.beam_sample_dist_normal_p_in_cone);
-    //     resample = false;
-    // }
 
     rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
     for(size_t i=0; i<object_materials.size(); i++)
@@ -572,7 +561,9 @@ void simulateImageCuda2()
 
     rm::StopWatch sw;
     double el_tot = 0.0;
-    double el;
+    double el1;
+    double el2;
+    double el3;
 
     // 1. Generate Signals
     sw();
@@ -771,347 +762,401 @@ void simulateImageCuda2()
 
         
 
-        // el = sw(); el_tot += el;
-        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
-
-        // std::cout << "- total: " << el_tot*1000.0 << "ms" << std::endl;
         
     }
-    el = sw(); el_tot += el;
-    std::cout << "RUNTIME" << std::endl;
-    std::cout << "- Signal Gen: " << el << "s" << std::endl;
-
-    rm::Memory<float, rm::VRAM_CUDA> img(n_cells * n_angles);
-    rm::Memory<float, rm::VRAM_CUDA> max_vals(n_angles);
-    rm::Memory<unsigned int, rm::VRAM_CUDA> signal_counts(n_angles);
-
-    cudaMemset(img.raw(), 0, n_cells * n_angles * sizeof(float) );
-    cudaMemset(max_vals.raw(), 0, n_angles * sizeof(float) );
-    cudaMemset(signal_counts.raw(), 0, n_angles * sizeof(unsigned int) );
-
-    cudaDeviceSynchronize();
-
-    // 2. noise(signal+system) signals
-    sw();
-    {
-        // draw signals
-
-        draw_signals(img, max_vals, signal_counts,
-            n_angles, n_cells,
-            signals1, results1.hits,
-            cfg.n_samples * 1, 
-            cfg.signal_denoising,
-            denoising_weights_gpu,
-            denoising_mode,
-            cfg.resolution
-        );
-
-        draw_signals(img, max_vals, signal_counts,
-            n_angles, n_cells,
-            signals2, results2.hits,
-            cfg.n_samples * 2, 
-            cfg.signal_denoising,
-            denoising_weights_gpu,
-            denoising_mode,
-            cfg.resolution
-        );
-
-        draw_signals(img, max_vals, signal_counts,
-            n_angles, n_cells,
-            signals3, results3.hits,
-            cfg.n_samples * 4, 
-            cfg.signal_denoising,
-            denoising_weights_gpu,
-            denoising_mode,
-            cfg.resolution
-        );
-        cudaDeviceSynchronize();
-    }
-    el = sw(); el_tot += el;
-    std::cout << "- Noise signal + system: " << el << "s" << std::endl;
-
-
-    // 3. ambient noise
-    sw();
-    if(cfg.ambient_noise)
-    {
-        std::random_device                      rand_dev;
-        std::mt19937                            gen(rand_dev());
-        std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
-
-        
-        // apply noise
-        // low freq perlin
-        double scale_lo = 0.05;
-        // high freq perlin
-        double scale_hi = 0.2;
-        double p_low = 0.9;
-
-        double random_begin = dist_uni(gen) * 1000.0;
-
-        fill_perlin_noise_hilo(
-            img, max_vals,
-            n_angles, n_cells,
-            random_begin, random_begin,
-            scale_lo, scale_hi,
-            p_low
-        );
-        cudaDeviceSynchronize();
-    }
-    el = sw(); el_tot += el;
-    std::cout << "- Noise ambient: " << el << "s" << std::endl;
-    std::cout << "- Total: " << el_tot << "s" << std::endl;
-
-
+    el1 = sw(); el_tot += el1;
     
-    rm::Mem<float> max_vals_cpu = max_vals;
-    rm::Mem<float> img_cpu = img;
-    float max_signal = 120.0;
+    // std::cout << "RUNTIME" << std::endl;
+    // std::cout << "- Signal Gen: " << el << "s" << std::endl;
 
-    cv::Mat_<float> polar_img_f(n_cells, n_angles);
+    bool use_unified_memory = true;
 
-    for(size_t x=0; x<n_angles; x++)
+    if(!use_unified_memory)
     {
-        float max_val = max_vals_cpu[x];
-        for(size_t y=0; y<n_cells; y++)
+        rm::Memory<float, rm::VRAM_CUDA> img(n_cells * n_angles);
+        rm::Memory<float, rm::VRAM_CUDA> max_vals(n_angles);
+        rm::Memory<unsigned int, rm::VRAM_CUDA> signal_counts(n_angles);
+
+        cudaMemset(img.raw(), 0, n_cells * n_angles * sizeof(float) );
+        cudaMemset(max_vals.raw(), 0, n_angles * sizeof(float) );
+        cudaMemset(signal_counts.raw(), 0, n_angles * sizeof(unsigned int) );
+
+        cudaDeviceSynchronize();
+
+        // 2. noise(signal+system) signals
+        sw();
         {
-            polar_img_f.at<float>(y, x) = img_cpu[x * n_cells + y] * max_signal / max_val;
-        }
-    }
-    polar_img_f.convertTo(polar_image, CV_8UC1);
-}
-
-void simulateImageCuda()
-{
-    // 
-    if(polar_image.rows != cfg.n_cells)
-    {
-        std::cout << "Resize canvas" << std::endl;
-        polar_image.resize(cfg.n_cells);
-        polar_image_cuda.resize(cfg.n_cells * 400);
-        std::cout << "Resizing canvas - done." << std::endl;
-    }
-
-    std::vector<float> denoising_weights;
-    int denoising_mode = 0;
-
-    if(cfg.signal_denoising > 0)
-    {
-        // std::cout << "Signal Denoising: ";
-        if(cfg.signal_denoising == 1)
-        {
-            // std::cout << "Triangular";
-            denoising_mode = cfg.signal_denoising_triangular_mode * cfg.signal_denoising_triangular_width;
-            denoising_weights = make_denoiser_triangular(
-                cfg.signal_denoising_triangular_width,
-                denoising_mode
+            // draw signals
+            draw_signals(img, max_vals, signal_counts,
+                n_angles, n_cells,
+                signals1, results1.hits,
+                cfg.n_samples * 1, 
+                cfg.signal_denoising,
+                denoising_weights_gpu,
+                denoising_mode,
+                cfg.resolution
             );
+
+            draw_signals(img, max_vals, signal_counts,
+                n_angles, n_cells,
+                signals2, results2.hits,
+                cfg.n_samples * 2, 
+                cfg.signal_denoising,
+                denoising_weights_gpu,
+                denoising_mode,
+                cfg.resolution
+            );
+
+            draw_signals(img, max_vals, signal_counts,
+                n_angles, n_cells,
+                signals3, results3.hits,
+                cfg.n_samples * 4, 
+                cfg.signal_denoising,
+                denoising_weights_gpu,
+                denoising_mode,
+                cfg.resolution
+            );
+            cudaDeviceSynchronize();
+        }
+        el2 = sw(); el_tot += el2;
+        // std::cout << "- Noise signal + system: " << el2 << "s" << std::endl;
+
+
+        // 3. ambient noise
+        sw();
+        if(cfg.ambient_noise)
+        {
+            std::random_device                      rand_dev;
+            std::mt19937                            gen(rand_dev());
+            std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
+
             
-        } else if(cfg.signal_denoising == 2) {
-            // std::cout << "Gaussian";
-            denoising_mode = cfg.signal_denoising_gaussian_mode * cfg.signal_denoising_gaussian_width;
-            denoising_weights = make_denoiser_gaussian(
-                cfg.signal_denoising_gaussian_width,
-                denoising_mode
+            // apply noise
+            // low freq perlin
+            double scale_lo = 0.05;
+            // high freq perlin
+            double scale_hi = 0.2;
+            double p_low = 0.9;
+
+            double random_begin = dist_uni(gen) * 1000.0;
+
+            fill_perlin_noise_hilo(
+                img, max_vals,
+                n_angles, n_cells,
+                random_begin, random_begin,
+                scale_lo, scale_hi,
+                p_low
             );
-
-        } else if(cfg.signal_denoising == 3) {
-            // std::cout << "Maxwell Boltzmann";
-            denoising_mode = cfg.signal_denoising_mb_mode * cfg.signal_denoising_mb_width;
-            denoising_weights = make_denoiser_maxwell_boltzmann(
-                cfg.signal_denoising_mb_width,
-                denoising_mode
-            );
+            cudaDeviceSynchronize();
         }
-        // std::cout << std::endl;
-
-        // scale so that mode has weight 1
-        // if(false)
-        if(denoising_weights.size() > 0)
-        {
-            double denoising_mode_val = denoising_weights[denoising_mode];
-
-            for(size_t i=0; i<denoising_weights.size(); i++)
-            {
-                denoising_weights[i] /= denoising_mode_val;
-            }
-        }
-    }
-
-    DirectedWave wave;
-    wave.energy       =  1.0;
-    wave.polarization =  0.5;
-    wave.frequency    = 76.5; // GHz
-    wave.velocity     =  0.3; // m / ns - speed in air
-    wave.material_id  =  0;   // air
-    wave.time         =  0.0; // ns
-    wave.ray.orig = {0.0, 0.0, 0.0};
-    wave.ray.dir = {1.0, 0.0, 0.0};
-
-    int n_cells = polar_image.rows;
-    int n_angles = polar_image.cols;
-
-    // without motion: update Tsm only once
-    if(!updateTsm())
-    {
-        std::cout << "Couldn't get Transform between sensor and map. Skipping..." << std::endl;
-        return;
-    }
-
-    if(resample)
-    {
-        waves_start = sample_cone_local(
-            wave,
-            params.model.beam_width,
-            params.model.n_samples,
-            cfg.beam_sample_dist,
-            cfg.beam_sample_dist_normal_p_in_cone);
-        resample = false;
-    }
-
-
-
-    rm::Memory<int, rm::RAM_CUDA> object_materials2(object_materials.size());
-    for(size_t i=0; i<object_materials.size(); i++)
-    {
-        object_materials2[i] = object_materials[i];
-    }
-    rm::Memory<int, rm::VRAM_CUDA> object_materials_gpu = object_materials2;
-
-    rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(params.materials.data.size());
-    for(size_t i=0; i<params.materials.data.size(); i++)
-    {
-        materials2[i] = params.materials.data[i];
-    }
-    rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
-
-    rm::StopWatch sw_radar_sim;
-    sw_radar_sim();
-
-    // compute maximum number of signals
-
-    // #pragma omp parallel for
-    for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
-    {
-        // std::cout << "Angle " << angle_id << std::endl;
-        int tid = omp_get_thread_num();
-
-        auto sims_it = sims_gpu.find(tid);
-        if(sims_gpu.find(tid) == sims_gpu.end())
-        {
-            sims_gpu[tid] = std::make_shared<rm::OnDnSimulatorOptix>(map_gpu);
-            sims_it = sims_gpu.find(tid);
-            auto Tsb = rm::Transform::Identity();
-            sims_it->second->setTsb(Tsb);
-
-            #pragma omp critical
-            std::cout << "Created new simulator for thread " << tid << std::endl; 
-        }
-        auto sim = sims_it->second;
-
-        std::vector<DirectedWave> waves = waves_start;
-        rm::OnDnModel model = make_model(waves);
-        // BAD: upload N rays
-        sim->setModel(model);
-
-        rm::Transform Tas;
-        Tas.R = rm::EulerAngles{0.0, 0.0, radar_model.getTheta(angle_id)};
-        Tas.t = radar_model.getOrigin(0, angle_id);
-
-        rm::Transform Tsm = Tsm_last;
-        rm::Transform Tam = Tsm * Tas;
+        el3 = sw(); el_tot += el3;
+        // std::cout << "- Noise ambient: " << el << "s" << std::endl;
+        // std::cout << "- Total: " << el_tot << "s" << std::endl;
         
-        rm::Memory<rm::Transform> Tams(1);
-        Tams[0] = Tam;
+        rm::Mem<float> max_vals_cpu = max_vals;
+        rm::Mem<float> img_cpu = img;
+        float max_signal = 120.0;
 
-        for(size_t pass_id = 0; pass_id < params.model.n_reflections; pass_id++)
+        cv::Mat_<float> polar_img_f(n_cells, n_angles);
+
+        for(size_t x=0; x<n_angles; x++)
         {
-            using ResT = rm::Bundle<
-                    rm::Hits<rm::VRAM_CUDA>,
-                    rm::Ranges<rm::VRAM_CUDA>,
-                    rm::Normals<rm::VRAM_CUDA>,
-                    rm::ObjectIds<rm::VRAM_CUDA> // connection to material
-                >;
+            float max_val = max_vals_cpu[x];
+            for(size_t y=0; y<n_cells; y++)
+            {
+                polar_img_f.at<float>(y, x) = img_cpu[x * n_cells + y] * max_signal / max_val;
+            }
+        }
+        polar_img_f.convertTo(polar_image, CV_8UC1);
+    } else {
+        // std::cout << "UNIFIED TEST" << std::endl;
+        // USE UNIFIED MEMORY
+        rm::Memory<float, rm::UNIFIED_CUDA> img(n_cells * n_angles);
+        rm::Memory<float, rm::UNIFIED_CUDA> max_vals(n_angles);
+        rm::Memory<unsigned int, rm::UNIFIED_CUDA> signal_counts(n_angles);
 
-            ResT results;
+        cudaMemset(img.raw(), 0, n_cells * n_angles * sizeof(float) );
+        cudaMemset(max_vals.raw(), 0, n_angles * sizeof(float) );
+        cudaMemset(signal_counts.raw(), 0, n_angles * sizeof(unsigned int) );
 
-            results.hits.resize(model.size());
-            results.ranges.resize(model.size());
-            results.normals.resize(model.size());
-            results.object_ids.resize(model.size());
+        rm::Memory<Signal> signals_cpu1 = signals1;
+        rm::Memory<uint8_t> hits_cpu1 = results1.hits;
+
+        rm::Memory<Signal> signals_cpu2 = signals2;
+        rm::Memory<uint8_t> hits_cpu2 = results2.hits;
+
+        rm::Memory<Signal> signals_cpu3 = signals3;
+        rm::Memory<uint8_t> hits_cpu3 = results3.hits;
+
+        // std::cout << "bla: " << signals_cpu1.size() << std::endl;
+
+        cudaDeviceSynchronize();
+        // std::cout << "- buffer created" << std::endl;
+
+        // 2. noise(signal+system) signals
+        sw();
+        {
+            size_t n_samples = cfg.n_samples;
             
-            // #pragma omp critical
-            // std::cout << "TID " << tid << " sim!" << std::endl; 
-
-            sim->simulate(Tams, results);
-
-
-            rm::Memory<DirectedWave, rm::RAM_CUDA> waves2(waves.size());
-            for(size_t i=0; i<waves.size(); i++)
+            #pragma omp parallel for
+            for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
             {
-                waves2[i] = waves[i];
-            }
-            rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_gpu = waves2;
+                // std::cout << "- angle " << angle_id << std::endl; 
+                unsigned int img_offset = angle_id * n_cells;
 
+                float max_val = 0.0;
+                unsigned int signal_count = 0;    
 
-            rm::Memory<Signal, rm::VRAM_CUDA> signals_gpu(waves.size());
-            rm::Memory<DirectedWave, rm::VRAM_CUDA> waves_new_gpu(waves.size() * 2);
-            rm::Memory<uint8_t, rm::VRAM_CUDA> waves_new_mask_gpu(waves.size() * 2);
-
-            propagate_waves(
-                    materials_gpu,
-                    object_materials_gpu,
-                    material_id_air,
-
-                    waves_gpu,
-                    results.hits, 
-                    results.ranges, 
-                    results.normals, 
-                    results.object_ids,
-                    
-                    signals_gpu,
-                    waves_new_gpu,
-                    waves_new_mask_gpu);
-
-            // write back
-            // rm::Memory<DirectedWave, rm::RAM_CUDA> waves_new_(waves.size());
-
-            rm::Memory<DirectedWave, rm::RAM_CUDA> waves_new = waves_new_gpu;
-            rm::Memory<uint8_t, rm::RAM_CUDA> waves_new_mask = waves_new_mask_gpu;
-
-            waves.resize(0);
-            // // waves.reserve(waves_new.size());
-
-            for(size_t i=0; i<waves_new.size(); i++)
-            {
-                if(waves_new_mask[i])
+                // Draw signals to slice
+                // draw signals 1
+                for(size_t sample_id=0; sample_id < n_samples; sample_id++)
                 {
-                    waves.push_back(waves_new[i]);
+                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
+                    const unsigned int signal_id = sample_id * n_angles + angle_id;
+
+                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
+                    
+                    
+                    if(hits_cpu1[signal_id])
+                    {
+                        // std::cout << "Fetch signal" << std::endl;
+                        auto signal = signals_cpu1[signal_id];
+                        // std::cout << "- done" << std::endl;
+                        // wave speed in air (light speed) * t / 2
+                        float half_time = signal.time / 2.0;
+                        float signal_dist = 0.3 * half_time;
+
+                        int cell = static_cast<int>(signal_dist / cfg.resolution);
+                        if(cell < n_cells)
+                        {
+                            // std::cout << "Cell hit: " << cell << std::endl;
+                            // float signal_old = slice.at<float>(cell, 0);
+
+                            if(cfg.signal_denoising > 0)
+                            {
+                                // signal denoising
+                                for(int vid = 0; vid < denoising_weights.size(); vid++)
+                                {
+                                    int glob_id = vid + cell - denoising_mode;
+                                    if(glob_id > 0 && glob_id < n_cells)
+                                    {
+                                        // TODO: check this
+                                        const float old_val = img[img_offset + glob_id];
+                                        const float new_val = old_val + signal.strength * denoising_weights[vid];
+                                        img[img_offset + glob_id] = new_val;
+
+                                        if(new_val > max_val)
+                                        {
+                                            max_val = new_val;
+                                        }
+                                    }
+                                }
+                            } else {
+                                // read 
+                                // TODO: check this
+                                const float old_val = img[img_offset + cell];
+                                const float new_val = std::max(old_val, (float)signal.strength);
+                                img[img_offset + cell] = new_val;
+
+                                if(new_val > max_val)
+                                {
+                                    max_val = new_val;
+                                }
+                            }
+
+                            signal_count++;
+                        }
+                    }
                 }
-            }
 
-            // update sensor model
-            if(pass_id < params.model.n_reflections - 1)
+
+                // Draw signals to slice
+                // draw signals 1
+                for(size_t sample_id=0; sample_id < n_samples * 2; sample_id++)
+                {
+                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
+                    const unsigned int signal_id = sample_id * n_angles + angle_id;
+
+                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
+                    
+                    
+                    if(hits_cpu2[signal_id])
+                    {
+                        // std::cout << "Fetch signal" << std::endl;
+                        auto signal = signals_cpu2[signal_id];
+                        // std::cout << "- done" << std::endl;
+                        // wave speed in air (light speed) * t / 2
+                        float half_time = signal.time / 2.0;
+                        float signal_dist = 0.3 * half_time;
+
+                        int cell = static_cast<int>(signal_dist / cfg.resolution);
+                        if(cell < n_cells)
+                        {
+                            // std::cout << "Cell hit: " << cell << std::endl;
+                            // float signal_old = slice.at<float>(cell, 0);
+
+                            if(cfg.signal_denoising > 0)
+                            {
+                                // signal denoising
+                                for(int vid = 0; vid < denoising_weights.size(); vid++)
+                                {
+                                    int glob_id = vid + cell - denoising_mode;
+                                    if(glob_id > 0 && glob_id < n_cells)
+                                    {
+                                        // TODO: check this
+                                        const float old_val = img[img_offset + glob_id];
+                                        const float new_val = old_val + signal.strength * denoising_weights[vid];
+                                        img[img_offset + glob_id] = new_val;
+
+                                        if(new_val > max_val)
+                                        {
+                                            max_val = new_val;
+                                        }
+                                    }
+                                }
+                            } else {
+                                // read 
+                                // TODO: check this
+                                const float old_val = img[img_offset + cell];
+                                const float new_val = std::max(old_val, (float)signal.strength);
+                                img[img_offset + cell] = new_val;
+
+                                if(new_val > max_val)
+                                {
+                                    max_val = new_val;
+                                }
+                            }
+
+                            signal_count++;
+                        }
+                    }
+                }
+
+
+                // Draw signals to slice
+                // draw signals 1
+                for(size_t sample_id=0; sample_id < n_samples * 4; sample_id++)
+                {
+                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
+                    const unsigned int signal_id = sample_id * n_angles + angle_id;
+
+                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
+                    
+                    
+                    if(hits_cpu3[signal_id])
+                    {
+                        // std::cout << "Fetch signal" << std::endl;
+                        auto signal = signals_cpu3[signal_id];
+                        // std::cout << "- done" << std::endl;
+                        // wave speed in air (light speed) * t / 2
+                        float half_time = signal.time / 2.0;
+                        float signal_dist = 0.3 * half_time;
+
+                        int cell = static_cast<int>(signal_dist / cfg.resolution);
+                        if(cell < n_cells)
+                        {
+                            // std::cout << "Cell hit: " << cell << std::endl;
+                            // float signal_old = slice.at<float>(cell, 0);
+
+                            if(cfg.signal_denoising > 0)
+                            {
+                                // signal denoising
+                                for(int vid = 0; vid < denoising_weights.size(); vid++)
+                                {
+                                    int glob_id = vid + cell - denoising_mode;
+                                    if(glob_id > 0 && glob_id < n_cells)
+                                    {
+                                        // TODO: check this
+                                        const float old_val = img[img_offset + glob_id];
+                                        const float new_val = old_val + signal.strength * denoising_weights[vid];
+                                        img[img_offset + glob_id] = new_val;
+
+                                        if(new_val > max_val)
+                                        {
+                                            max_val = new_val;
+                                        }
+                                    }
+                                }
+                            } else {
+                                // read 
+                                // TODO: check this
+                                const float old_val = img[img_offset + cell];
+                                const float new_val = std::max(old_val, (float)signal.strength);
+                                img[img_offset + cell] = new_val;
+
+                                if(new_val > max_val)
+                                {
+                                    max_val = new_val;
+                                }
+                            }
+
+                            signal_count++;
+                        }
+                    }
+                }
+
+                max_vals[angle_id] = max_val;
+                signal_counts[angle_id] = signal_count;
+            }
+        
+            // cudaDeviceSynchronize();
+
+        }
+        el2 = sw(); el_tot += el2;
+        // std::cout << "- Noise signal + system: " << el << "s" << std::endl;
+
+        // 3. ambient noise
+        sw();
+        if(cfg.ambient_noise)
+        {
+            std::random_device                      rand_dev;
+            std::mt19937                            gen(rand_dev());
+            std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
+
+            
+            // apply noise
+            // low freq perlin
+            double scale_lo = 0.05;
+            // high freq perlin
+            double scale_hi = 0.2;
+            double p_low = 0.9;
+
+            double random_begin = dist_uni(gen) * 1000.0;
+
+            fill_perlin_noise_hilo(
+                img, max_vals,
+                n_angles, n_cells,
+                random_begin, random_begin,
+                scale_lo, scale_hi,
+                p_low
+            );
+            cudaDeviceSynchronize();
+        }
+        el3 = sw(); el_tot += el3;
+        // std::cout << "- Noise ambient: " << el3 << "s" << std::endl;
+        // std::cout << "- Total: " << el_tot << "s" << std::endl;
+
+        float max_signal = 120.0;
+        cv::Mat_<float> polar_img_f(n_cells, n_angles);
+
+        for(size_t x=0; x<n_angles; x++)
+        {
+            float max_val = max_vals[x];
+            for(size_t y=0; y<n_cells; y++)
             {
-                model = make_model(waves);
-                sim->setModel(model);
-            } else {
-                // last run. dont need to update
+                polar_img_f.at<float>(y, x) = img[x * n_cells + y] * max_signal / max_val;
             }
+        }
+        polar_img_f.convertTo(polar_image, CV_8UC1);
 
-            // waves.shrink_to_fit();
-
-        } // pass loop
-
-    } // angle loop
-
-    double el = sw_radar_sim();
-    std::cout << el << std::endl;
-
+    }
+    
+    std::cout << std::fixed << std::setprecision(8) << el1/el_tot << ", " << el2/el_tot << ", " << el3/el_tot << ", " << el_tot << std::endl;
 
 }
 
-void simulateImage2()
+
+void simulateImageCPU()
 {
     if(polar_image.rows != cfg.n_cells)
     {
@@ -1668,7 +1713,7 @@ void executeCB(const radarays_ros::GenRadarImageGoalConstPtr &goal)
 
     params = goal->params;
     
-    simulateImage2();
+    simulateImageCPU();
 
     std::cout << polar_image.size() << std::endl;
 
@@ -1855,10 +1900,10 @@ int main_publisher(int argc, char** argv)
         // ROS_INFO("Simulate!");
 
         // CPU
-        // simulateImage2();
+        // simulateImageCPU();
 
         // GPU
-        simulateImageCuda2();
+        simulateImageGPU();
 
         sensor_msgs::ImagePtr msg = 
             cv_bridge::CvImage(

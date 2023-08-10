@@ -209,12 +209,13 @@ void fill_perlin_noise_hilo_kernel(
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    float ambient_noise_energy_min = 0.1;
-    float ambient_noise_energy_max = 0.3;
-    float ambient_noise_at_signal_0 = 0.8;
-    float ambient_noise_at_signal_1 = 0.1;
-    float ambient_noise_energy_loss = 0.01;
-    float resolution = 0.04;
+    
+    float ambient_noise_at_signal_0 = 0.1;
+    float ambient_noise_at_signal_1 = 0.03;
+    float ambient_noise_energy_min = 0.05;
+    float ambient_noise_energy_max = 0.08;
+    float ambient_noise_energy_loss = 0.05;
+    float resolution = 0.0595238;
 
     if (x < width && y < height && y >= 0 && x >= 0)
     {
@@ -254,9 +255,7 @@ void fill_perlin_noise_hilo_kernel(
         y_noise = y_noise + (noise_energy_max - noise_energy_min) * exp(-energy_loss * range) + noise_energy_min;
         y_noise = abs(y_noise);
 
-
-
-        img[x * height + y] = p;
+        img[x * height + y] = signal + y_noise;
     }
 }
 

@@ -749,6 +749,7 @@ void draw_signals_kernel(
 {
     unsigned int angle_id = blockIdx.x * blockDim.x + threadIdx.x;
     unsigned int n_signals = n_angles * n_samples;
+    unsigned int img_offset = angle_id * n_cells;
 
 
 
@@ -761,15 +762,15 @@ void draw_signals_kernel(
         // sample is vid (vertical)
         for(unsigned int sample_id=0; sample_id<n_samples; sample_id++)
         {
-            unsigned int signal_id = sample_id * n_angles + angle_id;
+            const unsigned int signal_id = sample_id * n_angles + angle_id;
             if(mask[signal_id])
             {
                 const Signal signal = signals[signal_id];
 
-                float half_time = signal.time / 2.0;
-                float signal_dist = 0.3 * half_time;
+                const float half_time = signal.time / 2.0;
+                const float signal_dist = 0.3 * half_time;
 
-                int cell = static_cast<int>(signal_dist / resolution);
+                const int cell = static_cast<int>(signal_dist / resolution);
 
                 if(cell < n_cells)
                 {
@@ -781,9 +782,9 @@ void draw_signals_kernel(
                             if(glob_id > 0 && glob_id < n_cells)
                             {
                                 // TODO: check this
-                                float old_val = img[glob_id * n_angles + angle_id];
-                                float new_val = old_val + signal.strength * denoising_weights[vid];
-                                img[glob_id * n_angles + angle_id] = new_val;
+                                const float old_val = img[img_offset + glob_id];
+                                const float new_val = old_val + signal.strength * denoising_weights[vid];
+                                img[img_offset + glob_id] = new_val;
 
                                 if(new_val > max_val)
                                 {
@@ -794,9 +795,9 @@ void draw_signals_kernel(
                     } else {
                         // read 
                         // TODO: check this
-                        float old_val = img[cell * n_angles + angle_id];
-                        float new_val = max( old_val, (float)signal.strength);
-                        img[cell * n_angles + angle_id] = new_val;
+                        const float old_val = img[img_offset + cell];
+                        const float new_val = max(old_val, (float)signal.strength);
+                        img[img_offset + cell] = new_val;
 
                         if(new_val > max_val)
                         {

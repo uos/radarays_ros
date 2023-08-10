@@ -571,8 +571,8 @@ void simulateImageCuda2()
     sim->setModel(waves_gpu1);
 
     rm::StopWatch sw;
-        double el_tot = 0.0;
-        double el;
+    double el_tot = 0.0;
+    double el;
 
     // 1. Generate Signals
     sw();
@@ -777,12 +777,9 @@ void simulateImageCuda2()
         // std::cout << "- total: " << el_tot*1000.0 << "ms" << std::endl;
         
     }
-    el = sw();
+    el = sw(); el_tot += el;
     std::cout << "RUNTIME" << std::endl;
     std::cout << "- Signal Gen: " << el << "s" << std::endl;
-    
-    
-
 
     rm::Memory<float, rm::VRAM_CUDA> img(n_cells * n_angles);
     rm::Memory<float, rm::VRAM_CUDA> max_vals(n_angles);
@@ -828,11 +825,9 @@ void simulateImageCuda2()
             denoising_mode,
             cfg.resolution
         );
-
-
         cudaDeviceSynchronize();
     }
-    el = sw();
+    el = sw(); el_tot += el;
     std::cout << "- Noise signal + system: " << el << "s" << std::endl;
 
 
@@ -857,18 +852,33 @@ void simulateImageCuda2()
         fill_perlin_noise_hilo(
             img, max_vals,
             n_angles, n_cells,
-            random_begin, 0.0,
+            random_begin, random_begin,
             scale_lo, scale_hi,
             p_low
         );
         cudaDeviceSynchronize();
     }
-    el = sw();
+    el = sw(); el_tot += el;
     std::cout << "- Noise ambient: " << el << "s" << std::endl;
+    std::cout << "- Total: " << el_tot << "s" << std::endl;
 
 
+    
+    rm::Mem<float> max_vals_cpu = max_vals;
+    rm::Mem<float> img_cpu = img;
+    float max_signal = 120.0;
 
+    cv::Mat_<float> polar_img_f(n_cells, n_angles);
 
+    for(size_t x=0; x<n_angles; x++)
+    {
+        float max_val = max_vals_cpu[x];
+        for(size_t y=0; y<n_cells; y++)
+        {
+            polar_img_f.at<float>(y, x) = img_cpu[x * n_cells + y] * max_signal / max_val;
+        }
+    }
+    polar_img_f.convertTo(polar_image, CV_8UC1);
 }
 
 void simulateImageCuda()
@@ -1228,7 +1238,7 @@ void simulateImage2()
     // std::cout << "Threads: " << OMP_NUM_THREADS << std::endl;
 
 
-    #pragma omp parallel for if(!cfg.include_motion)
+    // #pragma omp parallel for if(!cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
 
@@ -1608,6 +1618,13 @@ void simulateImage2()
 
         float max_signal = 120.0;
         slice *= max_signal / max_val;
+
+
+        for(size_t i=0; i<slice.rows; i++)
+        {
+            std::cout << std::fixed << std::setprecision(2) << slice.at<float>(i) << ", ";
+        }
+        std::cout << std::endl;
 
         slice.convertTo(polar_image.col(col), CV_8UC1);
 

@@ -36,16 +36,11 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     if(m_polar_image.rows != m_cfg.n_cells)
     {
         // m_polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
-        std::cout << "Resize canvas" << std::endl;
+        std::cout << "[RadarCPU] Resize canvas to " << m_cfg.n_cells << std::endl;
 
         m_polar_image.resize(m_cfg.n_cells);
-        // perlin_noise_buffer.resize(m_cfg.n_cells);
-
-        // #if defined WITH_CUDA
-        // perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
-        // #endif // defined WITH_CUDA
         
-        std::cout << "Resizing canvas - done." << std::endl;
+        std::cout << "[RadarCPU] Resizing canvas - done." << std::endl;
     }
 
     // std::cout << "Fill canvas: " << m_polar_image.cols << "x" << m_polar_image.rows << std::endl;
@@ -158,7 +153,7 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     // std::cout << "Threads: " << OMP_NUM_THREADS << std::endl;
 
 
-    // #pragma omp parallel for if(!cfg.include_motion)
+    #pragma omp parallel for if(!m_cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
 
@@ -536,7 +531,7 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
         // double el4 = sw_inner();
 
 
-        slice *= m_max_signal / max_val;
+        slice *= m_cfg.signal_max / max_val;
 
 
         // for(size_t i=0; i<slice.rows; i++)
@@ -558,9 +553,7 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     // std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
     std::cout << std::fixed << std::setprecision(8) << el_radar_sim << std::endl;
 
-
-    msg = 
-            cv_bridge::CvImage(
+    msg = cv_bridge::CvImage(
                 std_msgs::Header(), 
                 "mono8",
                 m_polar_image).toImageMsg();

@@ -24,8 +24,6 @@ Radar::Radar(
     m_wave_energy_threshold = 0.001;
     m_resample = true;
 
-    m_polar_image = cv::Mat_<unsigned char>(0, m_radar_model.theta.size);
-
     m_radar_model.theta.inc = -(2 * M_PI) / 400;
     m_radar_model.theta.min = 0.0;
     m_radar_model.theta.size = 400;
@@ -33,6 +31,14 @@ Radar::Radar(
     m_radar_model.phi.min = 0.0;
     m_radar_model.phi.size = 1;
 
+    m_polar_image = cv::Mat_<unsigned char>(0, m_radar_model.theta.size);
+
+    loadParams();
+
+
+    dynamic_reconfigure::Server<RadarModelConfig>::CallbackType f;
+    f = boost::bind(&Radar::updateDynCfg, this, _1, _2);
+    m_dyn_rec_server.setCallback(f);
 }
 
 std::optional<rm::Transform> Radar::getTsm()
@@ -180,7 +186,9 @@ bool Radar::updateTsm(ros::Time stamp)
     return true;
 }
 
-void Radar::updateDynCfg(const RadarModelConfig& config)
+void Radar::updateDynCfg(
+    RadarModelConfig &config,
+    uint32_t level)
 {
     ROS_INFO("Changing Model");
     

@@ -20,6 +20,9 @@
 
 #include <sensor_msgs/Image.h>
 
+#include <dynamic_reconfigure/server.h>
+
+
 namespace rm = rmagine;
 
 namespace radarays_ros
@@ -36,9 +39,6 @@ public:
         std::shared_ptr<tf2_ros::TransformListener> tf_listener,
         std::string map_frame, 
         std::string sensor_frame);
-
-    void updateDynCfg(const RadarModelConfig& config);
-
     
     void loadParams();
 
@@ -48,19 +48,38 @@ public:
     bool updateTsm();
     bool updateTsm(ros::Time stamp);
 
+    inline RadarParams getParams()
+    {
+        return m_params;
+    }
+
+    inline void setParams(RadarParams params)
+    {
+        m_params = params;
+    }
+
     /**
      * Implement this function
     */
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp) = 0;
 
 
+
+
 protected:
+
+    void updateDynCfg(RadarModelConfig &config, uint32_t level);
+
     // ROS NODE
     std::shared_ptr<ros::NodeHandle> m_nh_p;
 
     // TF
     std::shared_ptr<tf2_ros::Buffer> m_tf_buffer;
     std::shared_ptr<tf2_ros::TransformListener> m_tf_listener;
+
+    // DynRec
+    dynamic_reconfigure::Server<RadarModelConfig> m_dyn_rec_server;
+
 
     rm::Transform Tsm_last = rm::Transform::Identity();
     bool has_last;

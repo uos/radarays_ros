@@ -63,9 +63,6 @@ public:
     */
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp) = 0;
 
-
-
-
 protected:
 
     void updateDynCfg(RadarModelConfig &config, uint32_t level);

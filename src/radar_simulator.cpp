@@ -56,6 +56,7 @@ std::shared_ptr<ros::NodeHandle> nh_p;
 std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
+image_transport::Publisher pub_polar;
 
 RadarPtr radarays_sim;
 
@@ -183,6 +184,20 @@ bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
 //     return 0;
 // }
 
+void sync_cb(const sensor_msgs::Image::ConstPtr& sync_msg)
+{
+    radarays_sim->loadParams();
+    sensor_msgs::ImagePtr msg = radarays_sim->simulate(sync_msg->header.stamp);
+
+    if(!msg)
+    {
+        ROS_INFO_STREAM("SYNC: " << sync_msg->header.stamp << " -- " << " None");
+        return;
+    }
+    
+    ROS_INFO_STREAM("SYNC: " << sync_msg->header.stamp << " -- " << msg->header.stamp << ", SYN ERR: " << (sync_msg->header.stamp - msg->header.stamp).toSec() * 1000.0 << "ms" );
+    pub_polar.publish(msg);
+}
 
 int main_publisher(int argc, char** argv)
 {
@@ -197,6 +212,7 @@ int main_publisher(int argc, char** argv)
     tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
 
 
+    
     std::string map_file;
     nh_p->getParam("map_file", map_file);
     nh_p->getParam("map_frame", map_frame);
@@ -235,30 +251,48 @@ int main_publisher(int argc, char** argv)
 
     // image transport
     image_transport::ImageTransport it(nh);
-    image_transport::Publisher pub = it.advertise("radar/image", 1);
+    pub_polar = it.advertise("radar/image", 1);
 
     // pcl
     pub_pcl = nh_p->advertise<sensor_msgs::PointCloud>("radar/pcl_real", 1);
 
 
-    ros::Rate r(100);
-    while(nh.ok())
+
+    std::string sync_topic = "";
+
+    if(nh_p->getParam("sync_topic", sync_topic))
     {
-        radarays_sim->loadParams();
-        sensor_msgs::ImagePtr msg = radarays_sim->simulate(ros::Time(0));
+        std::cout << "SYNC SIMULATIONS WITH TOPIC " << sync_topic << std::endl;
+        ros::Subscriber sub = nh.subscribe<sensor_msgs::Image>(sync_topic, 1, sync_cb);
+        ros::spin();
 
-        if(!msg)
+    } else {
+        // unsynced
+        ros::Rate r(100);
+        while(nh.ok())
         {
-            std::cout << "MSG EMPTY!" << std::endl;
+            radarays_sim->loadParams();
+            sensor_msgs::ImagePtr msg = radarays_sim->simulate(ros::Time(0));
+
+            if(msg)
+            {
+                pub_polar.publish(msg);
+            } else {
+                std::cout << "MESSAGE EMPTY" << std::endl;
+            }
+
+            ros::spinOnce();
+            r.sleep();
         }
-        pub.publish(msg);
-
-        ros::spinOnce();
-        r.sleep();
     }
+    
 
+
+    
     return 0;
 }
+
+
 
 int main(int argc, char** argv)
 {

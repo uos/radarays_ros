@@ -37,27 +37,15 @@
 
 #include <omp.h>
 
+#include <radarays_ros/ros_helper.h>
+
+#include <radarays_ros/RadarCPU.hpp>
+
+
+
 using namespace radarays_ros;
 
 namespace rm = rmagine;
-
-
-// parameters
-static RadarModel default_params_model()
-{
-    RadarModel model;
-    model.beam_width = 8.0 * M_PI / 180.0;
-    model.n_samples = 200;
-    model.n_reflections = 2;
-    return model;
-}
-
-static RadarParams default_params()
-{
-    RadarParams ret;
-    ret.model = default_params_model();
-    return ret;
-}
 
 
 std::string map_frame = "map";
@@ -72,6 +60,8 @@ cv::Mat polar_image;
 std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
+
+RadarPtr radarays_sim;
 
 rm::EmbreeMapPtr map;
 // thread -> sim
@@ -103,84 +93,15 @@ std::vector<DirectedWave> waves_start;
 bool resample = true;
 
 // TODO: precompute this:
-cv::Mat perlin_noise_buffer;
+// cv::Mat perlin_noise_buffer;
 
-#if defined WITH_CUDA
-cv::cuda::GpuMat perlin_noise_buffer_cuda;
-#endif // defined WITH_CUDA
-
+// #if defined WITH_CUDA
+// cv::cuda::GpuMat perlin_noise_buffer_cuda;
+// #endif // defined WITH_CUDA
 
 
 // intersection attributes
 
-
-
-template<typename T>
-T loadFromRPC(XmlRpc::XmlRpcValue);
-
-template<>
-RadarMaterial loadFromRPC<RadarMaterial>(XmlRpc::XmlRpcValue material_xml)
-{
-    RadarMaterial ret;
-    if(material_xml.hasMember("velocity"))
-    {
-        ret.velocity = (double)material_xml["velocity"];
-    } else {
-        ret.velocity = 0.0;
-    }
-
-    if(material_xml.hasMember("ambient"))
-    {
-        ret.ambient = (double)material_xml["ambient"];
-    } else {
-        ret.ambient = 0.0;
-    }
-
-    if(material_xml.hasMember("diffuse"))
-    {
-        ret.diffuse = (double)material_xml["diffuse"];
-    } else {
-        ret.diffuse = 0.0;
-    }
-
-    if(material_xml.hasMember("specular"))
-    {
-        ret.specular = (double)material_xml["specular"];
-    } else {
-        ret.specular = 0.0;
-    }
-
-    return ret;
-}
-
-RadarMaterials loadRadarMaterialsFromParameterServer(
-    std::shared_ptr<ros::NodeHandle> nh)
-{
-    RadarMaterials ret;
-    
-    XmlRpc::XmlRpcValue materials_xml;
-    nh->getParam("materials", materials_xml);
-
-    if(!materials_xml.valid())
-    {
-        std::cout << "Loaded XmlRpcValue is invalid" << std::endl;
-    }
-
-    if(materials_xml.getType() == XmlRpc::XmlRpcValue::TypeArray)
-    {
-        size_t n_materials = materials_xml.size();
-
-        for(size_t i=0; i<n_materials; i++)
-        {
-            auto material_xml = materials_xml[i];
-            auto material = loadFromRPC<RadarMaterial>(material_xml);
-            // std::cout << i << ": " << material << std::endl;
-            ret.data.push_back(material);
-        }
-    }
-
-    return ret;
-}
 
 void loadParameters()
 {
@@ -202,6 +123,11 @@ void modelCB(
     uint32_t level) 
 {   
     ROS_INFO("Changing Model");
+
+    if(radarays_sim)
+    {
+        radarays_sim->updateDynCfg(config);
+    }
     
     // z_offset
     // auto T = rm::Transform::Identity();
@@ -233,7 +159,6 @@ std::optional<rm::Transform> getTsm()
 {
     rm::Transform Tsm;
     // Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
-
     // Tsm.R = rm::EulerAngles{0.0149786, 0.00858233, 3.04591};
     // Tsm.t = rm::Vector3{0.863185,-1.164,1.49406};
 
@@ -1892,6 +1817,20 @@ int main_publisher(int argc, char** argv)
     // perlin_noise_buffer_cuda = cv::cuda::GpuMat(perlin_noise_buffer.size(), perlin_noise_buffer.type());
     // #endif // defined WITH_CUDA
 
+
+    // CPU
+    radarays_sim = std::make_shared<RadarCPU>(
+        nh_p,
+        tf_buffer,
+        tf_listener,
+        map_frame,
+        sensor_frame,
+        map
+    );
+
+    // GPU
+    
+
     ros::Rate r(100);
 
     while(nh.ok())
@@ -1899,18 +1838,25 @@ int main_publisher(int argc, char** argv)
         loadParameters();
         // ROS_INFO("Simulate!");
 
+
+        sensor_msgs::ImagePtr msg;
+
         // CPU
         // simulateImageCPU();
+        {
+            // or use timestamp of a message we want to replicate 
+            msg = radarays_sim->simulate(ros::Time(0));
+        }
 
         // GPU
-        simulateImageGPU();
+        // {
+        //     simulateImageGPU();
+        //     msg = cv_bridge::CvImage(
+        //             std_msgs::Header(), 
+        //             "mono8",
+        //             polar_image).toImageMsg();
+        // }
 
-        sensor_msgs::ImagePtr msg = 
-            cv_bridge::CvImage(
-                std_msgs::Header(), 
-                "mono8",
-                polar_image).toImageMsg();
-        
         msg->header.stamp = Tsm_stamp_last;
         pub.publish(msg);
 

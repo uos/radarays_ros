@@ -118,8 +118,11 @@ message(WARNING "BUILD radarays_cuda")
 endif(CUDA_FOUND)
 
 
-add_executable(radar_simulator 
-    src/radar_simulator.cpp)
+add_executable(radar_simulator
+    src/radar_simulator.cpp
+    src/radarays_ros/ros_helper.cpp
+    src/radarays_ros/Radar.cpp
+    src/radarays_ros/RadarCPU.cpp)
 
 add_dependencies(radar_simulator 
     ${${PROJECT_NAME}_EXPORTED_TARGETS}

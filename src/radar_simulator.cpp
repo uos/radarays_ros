@@ -62,6 +62,21 @@ RadarPtr radarays_sim;
 
 
 
+
+
+bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
+         radarays_ros::GetRadarParams::Response &res)
+{
+    if(radarays_sim)
+    {
+        res.params = radarays_sim->getParams();
+        return true;
+    } else {
+        return false;
+    }
+    return true;
+}
+
 // std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;
 // radarays_ros::GenRadarImageFeedback feedback_;
 // radarays_ros::GenRadarImageResult result_;
@@ -85,19 +100,6 @@ RadarPtr radarays_sim;
 //     result_.polar_image.header.stamp = ros::Time::now();
 //     as_->setSucceeded(result_);
 // }
-
-bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
-         radarays_ros::GetRadarParams::Response &res)
-{
-    if(radarays_sim)
-    {
-        res.params = radarays_sim->getParams();
-        return true;
-    } else {
-        return false;
-    }
-    return true;
-}
 
 // int main_action_server(int argc, char** argv)
 // {
@@ -176,11 +178,8 @@ bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
 //             as_->start();
 //             ros::Duration(2.0).sleep();
 //         }
-
 //         tp = tc;
 //     }
-    
-
 //     return 0;
 // }
 

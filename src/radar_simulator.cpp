@@ -202,6 +202,8 @@ int main_publisher(int argc, char** argv)
 {
     ros::init(argc, argv, "radar_simulator");
 
+    std::cout << "STARTING RADAR SIMULATOR" << std::endl;
+
     ros::NodeHandle nh;
     nh_p = std::make_shared<ros::NodeHandle>("~");
 

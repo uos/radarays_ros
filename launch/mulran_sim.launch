@@ -1,22 +1,30 @@
 <?xml version="5.0"?>
 <launch>
 
-<arg name="rate" default="0.5" />
+<arg name="rate" default="1.0" />
 <!-- <arg name="meshfile" default="/media/amock/SanDiskAlex/datasets/mulran/KAIST/range_mcl_mesh_mulran_kaist_v3.ply" />
 <arg name="bagfile" default="/media/amock/SanDiskAlex/datasets/micp_mulran/KAIST/mulran_kaist02_micp.bag" /> -->
-<arg name="meshfile" default="/home/amock/datasets/mulran_meshes/lvr2/KAIST/kaist02_mesh_red05_cleaned.ply" />
-<arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist03_micp_lvr2.bag" />
+
+	<!--<arg name="meshfile" default="/home/amock/datasets/mulran_meshes/lvr2/KAIST/kaist02_mesh_red05_cleaned.ply" />-->
+	<!--<arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist03_micp_lvr2.bag" />-->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist02_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist03_micp_lvr2.bag" /> -->
 
-<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v1.yaml" /> -->
+<arg name="meshfile" default="/home/amock/datasets/mulran_meshes/lvr2/DCC/dcc03_mesh_red05_cleaned.ply" />
+<arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" />
+<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc02_micp_lvr2.bag" /> -->
+<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" /> -->
+
+
+<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6.yaml" /> -->
+<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6_laserlike.yaml" />
 <!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_200.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_400.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_600.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_800.yaml" /> -->
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_1000.yaml" />
 
-<node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate)" />
+
+<node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate)" output="screen" />
 
 <node pkg="radarays_ros" type="radar_simulator" name="radar_simulator" output="screen">
     <param name="map_file" type="string" value="$(arg meshfile)" />

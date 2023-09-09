@@ -19,15 +19,16 @@ __device__ __forceinline__
 float back_reflection_shader(
     float incidence_angle, 
     float energy,
-    float diffuse,
-    float specular_fac, 
-    float specular_exp)
+    float diffuse, // A
+    float specular_fac, // B
+    float specular_exp) // C
 {
     // Diffuse: Lambertian model - NdotL
     // NdotL = v*w. for our case v*w = ||v|| * ||w|| * cos(incidence_angle) = cos(incidence_angle)
     // incidence_angle -> 0 - pi/2
     // I_diffuse 1 -> 0
     float IdotR = cos(incidence_angle);
+
     float I_diffuse = 1.0;
     float I_specular = pow(IdotR, specular_exp);
 

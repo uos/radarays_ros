@@ -104,10 +104,18 @@ add_library(radarays
     src/radarays_ros/radar_algorithms.cpp
 )
 
+add_dependencies(radarays 
+   ${${PROJECT_NAME}_EXPORTED_TARGETS}
+   ${catkin_EXPORTED_TARGETS}
+   ${PROJECT_NAME}_gencfg
+)
+
 target_link_libraries(
     radarays
     ${rmagine_LIBRARIES}
 )
+
+
 
 if(CUDA_FOUND)
 message(WARNING "BUILD radarays_cuda")
@@ -115,6 +123,16 @@ message(WARNING "BUILD radarays_cuda")
         src/radarays_ros/image_algorithms.cu
         src/radarays_ros/radar_algorithms.cu
     )
+    add_dependencies(radarays_cuda 
+        ${${PROJECT_NAME}_EXPORTED_TARGETS}
+        ${catkin_EXPORTED_TARGETS}
+        ${PROJECT_NAME}_gencfg
+    )
+    target_link_libraries(radarays_cuda
+        ${CUDA_LIBRARIES}
+        radarays
+    )
+
 endif(CUDA_FOUND)
 
 
@@ -145,6 +163,8 @@ if(CUDA_FOUND)
     target_link_libraries(radar_simulator
         radarays_cuda
     )
+    
+
     message(WARNING "LINK radarays_cuda")
 endif(CUDA_FOUND)
 

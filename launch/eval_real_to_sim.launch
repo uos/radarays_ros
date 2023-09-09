@@ -1,0 +1,19 @@
+<?xml version="5.0"?>
+<launch>
+
+<!-- <arg name="bagfile" default="/home/amock/datasets/radarays_mulran/DCC/mulran_dcc03_radarays_lvr2_v6_laserlike.bag" /> -->
+<!-- <arg name="rate" default="0.5" /> -->
+
+<!-- <node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate)" output="screen" /> -->
+
+<node pkg="radar_tools" type="compare_radar_images.py" name="compare_radar_images" output="screen">
+    <param name="topic_in_1" value="/Navtech/Polar" />
+    <param name="topic_in_2" value="/radar/image" />
+    <param name="topic_out" value="/real_to_sim_gap"/>
+    <param name="time_sync" value="virtual" />
+</node>
+
+<node pkg="radar_tools" type="compare_radar_images_writer.py" name="compare_radar_images_writer" output="screen">
+</node>
+
+</launch>

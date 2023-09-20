@@ -2,6 +2,7 @@
 <launch>
 
 <arg name="rate" default="1.0" />
+<arg name="gui" default="true" />
 <!-- <arg name="meshfile" default="/media/amock/SanDiskAlex/datasets/mulran/KAIST/range_mcl_mesh_mulran_kaist_v3.ply" />
 <arg name="bagfile" default="/media/amock/SanDiskAlex/datasets/micp_mulran/KAIST/mulran_kaist02_micp.bag" /> -->
 
@@ -16,8 +17,8 @@
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" /> -->
 
 
-<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6.yaml" /> -->
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6_laserlike.yaml" />
+<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6.yaml" />
+<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6_laserlike.yaml" /> -->
 <!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_200.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_400.yaml" />
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_600.yaml" />
@@ -37,6 +38,12 @@
 <node name="dynamic_reconfigure_load" pkg="dynamic_reconfigure" type="dynparam" 
     args="load /radar_simulator $(arg radarparams)" />
 
-<!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find radarays_ros)/rviz/mulran.rviz"/> -->
+<group if="$(arg gui)">
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find radarays_ros)/rviz/mulran.rviz">
+        <rosparam param="rviz_map_plugin" subst_value="True">
+            Map3D: $(arg meshfile)
+        </rosparam>
+    </node>
+</group>
 
 </launch>

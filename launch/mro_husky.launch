@@ -1,7 +1,6 @@
 <?xml version="5.0"?>
 <launch>
 
-<!-- <arg name="meshfile" default="/home/amock/blender_projects/oru/oru3.dae" /> -->
 <arg name="meshfile" default="/home/amock/blender_projects/oru/oru4.dae" />
 
 # static tf + robot model

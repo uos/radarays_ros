@@ -61,9 +61,6 @@ image_transport::Publisher pub_polar;
 RadarPtr radarays_sim;
 
 
-
-
-
 bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
          radarays_ros::GetRadarParams::Response &res)
 {
@@ -76,112 +73,6 @@ bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
     }
     return true;
 }
-
-// std::shared_ptr<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> > as_;
-// radarays_ros::GenRadarImageFeedback feedback_;
-// radarays_ros::GenRadarImageResult result_;
-
-// void executeCB(const radarays_ros::GenRadarImageGoalConstPtr &goal)
-// {
-//     std::cout << "CALL ACTION" << std::endl;
-
-//     params = goal->params;
-    
-//     simulateImageGPU();
-
-//     std::cout << polar_image.size() << std::endl;
-
-//     result_.polar_image = 
-//         *cv_bridge::CvImage(
-//             std_msgs::Header(), 
-//             "mono8",
-//             polar_image).toImageMsg();
-
-//     result_.polar_image.header.stamp = ros::Time::now();
-//     as_->setSucceeded(result_);
-// }
-
-// int main_action_server(int argc, char** argv)
-// {
-//     std::cout << "STARTING RADAR SIMULATOR - ACTION SERVER" << std::endl;
-//     ros::init(argc, argv, "radar_simulator");
-
-//     ros::NodeHandle nh;
-//     nh_p = std::make_shared<ros::NodeHandle>("~");
-
-//     std::string map_file;
-//     nh_p->getParam("map_file", map_file);
-//     nh_p->getParam("map_frame", map_frame);
-//     nh_p->getParam("sensor_frame", sensor_frame);
-
-//     loadParameters();
-
-//     std::cout << "SPEED IN AIR: " << params.materials.data[material_id_air].velocity << std::endl;
-
-//     map = rm::import_embree_map(map_file);
-
-//     // offset of sensor center to frame
-//     auto Tsb = rm::Transform::Identity();
-//     Tsb.t.z = 0.0;
-
-//     // sim->setTsb(Tsb);
-
-//     // n_cells = 3424;
-//     // n_cells = 1712;
-//     radar_model.theta.inc = -(2 * M_PI) / 400;
-//     radar_model.theta.min = 0.0;
-//     radar_model.theta.size = 400;
-//     radar_model.phi.inc = 1.0;
-//     radar_model.phi.min = 0.0;
-//     radar_model.phi.size = 1;
-
-//     // setting up dynamic reconfigure
-//     dynamic_reconfigure::Server<RadarModelConfig> server;
-//     dynamic_reconfigure::Server<RadarModelConfig>::CallbackType f;
-//     f = boost::bind(&modelCB, _1, _2);
-//     server.setCallback(f);
-
-//     // setting up tf
-//     // tf_buffer = std::make_shared<tf2_ros::Buffer>();
-//     // tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-
-//     polar_image = cv::Mat_<unsigned char>(0, radar_model.theta.size);
-
-//     // Start service server
-//     ros::ServiceServer service = nh_p->advertiseService("get_radar_params", getRadarParamsCB);
-    
-//     // Start action server
-//     std::string action_name = "gen_radar_image";
-//     as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
-//         *nh_p, action_name, executeCB, false
-//     );
-
-//     as_->start();
-
-//     ros::Rate r(100);
-//     ros::Time tp = ros::Time::now();
-
-//     while(ros::ok())
-//     {
-//         r.sleep();
-//         ros::spinOnce();
-//         auto tc = ros::Time::now();
-//         if(tc < tp)
-//         {
-//             // jump back in time
-//             std::cout << "Jump back in time detected" << std::endl;
-//             ros::Duration(2.0).sleep();
-//             as_->shutdown();
-//             as_ = std::make_shared<actionlib::SimpleActionServer<radarays_ros::GenRadarImageAction> >(
-//                 *nh_p, action_name, executeCB, false
-//             );
-//             as_->start();
-//             ros::Duration(2.0).sleep();
-//         }
-//         tp = tc;
-//     }
-//     return 0;
-// }
 
 void sync_cb(const sensor_msgs::Image::ConstPtr& sync_msg)
 {
@@ -211,15 +102,28 @@ int main_publisher(int argc, char** argv)
     // setting up tf
     tf_buffer = std::make_shared<tf2_ros::Buffer>();
     tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-
-
     
     std::string map_file;
     nh_p->getParam("map_file", map_file);
     nh_p->getParam("map_frame", map_frame);
     nh_p->getParam("sensor_frame", sensor_frame);
 
+    // desired computing unit
     bool use_gpu = false;
+    nh_p->param<bool>("gpu", use_gpu, false);
+
+    // available computing unit
+    bool gpu_available = false;
+    #if defined RADARAYS_WITH_GPU
+        gpu_available = true;
+    #endif
+
+
+    if(use_gpu && !gpu_available)
+    {
+        std::cout << "Desired computing unit 'GPU' is not available on your system." << std::endl;
+        return 0;
+    }
     
     if(!use_gpu)
     {
@@ -237,6 +141,7 @@ int main_publisher(int argc, char** argv)
         );
     } else { 
         // GPU
+        #if defined RADARAYS_WITH_GPU
         rm::OptixMapPtr map_gpu = rm::import_optix_map(map_file);
 
         std::cout << "RadarGPU" << std::endl;
@@ -248,6 +153,7 @@ int main_publisher(int argc, char** argv)
             sensor_frame,
             map_gpu
         );
+        #endif
     }
 
     // image transport
@@ -286,9 +192,6 @@ int main_publisher(int argc, char** argv)
             r.sleep();
         }
     }
-    
-
-
     
     return 0;
 }

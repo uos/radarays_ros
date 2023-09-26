@@ -139,9 +139,6 @@ void propagate_waves_kernel(
         const double n1 = v2;
         const double n2 = v1;
 
-        DirectedWave reflection = incidence;
-        DirectedWave refraction = incidence;
-
         // is this correct?
         double incidence_angle = acos((-incidence.ray.dir).dot(surface_normal));
 
@@ -747,7 +744,7 @@ void draw_signals_kernel(
     float resolution)
 {
     unsigned int angle_id = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n_signals = n_angles * n_samples;
+    // unsigned int n_signals = n_angles * n_samples;
     unsigned int img_offset = angle_id * n_cells;
 
 

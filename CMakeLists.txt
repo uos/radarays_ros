@@ -29,6 +29,16 @@ include_directories(
 find_package(rmagine REQUIRED)
 include_directories(${rmagine_INCLUDE_DIRS})
 
+set(RADARAYS_ROS_LIBRARIES radarays)
+set(RADARAYS_ROS_DEFINITIONS)
+
+if(${rmagine_cuda_FOUND} AND ${rmagine_optix_FOUND})
+    list(APPEND RADARAYS_ROS_LIBRARIES radarays_gpu)
+    set(RADARAYS_WITH_GPU True)
+    list(APPEND RADARAYS_ROS_DEFINITIONS -DRADARAYS_WITH_GPU)
+endif()
+
+
 add_message_files(
   FILES
     RadarMaterial.msg
@@ -66,42 +76,24 @@ catkin_package(
         actionlib_msgs
     DEPENDS 
         rmagine
+    LIBRARIES
+        ${RADARAYS_ROS_LIBRARIES}
 )
 
-include_directories(
-    include
-)
-
-#add_executable(mesh_publisher src/mesh_publisher.cpp)
-
-#add_dependencies(mesh_publisher 
-#    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-#    ${catkin_EXPORTED_TARGETS}
-#    ${PROJECT_NAME}_gencfg
-#)
-
-## Specify libraries to link a library or executable target against
-#target_link_libraries(mesh_publisher
-#    ${catkin_LIBRARIES}
-#    ${rmagine_LIBRARIES}
-#)
-
-find_package(CUDA)
-if(CUDA_FOUND)
-    message(WARNING "RADARAYS_ROS: CUDA_FOUND")
+if(RADARAYS_WITH_GPU)
+    find_package(CUDA REQUIRED)
     enable_language(CUDA)
     include_directories(${CUDA_INCLUDE_DIRS})
-endif(CUDA_FOUND)
-
-# set(CUDA_FOUND 0)
-
+endif()
 
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
-
 add_library(radarays
     src/radarays_ros/radar_algorithms.cpp
+    src/radarays_ros/ros_helper.cpp
+    src/radarays_ros/Radar.cpp
+    src/radarays_ros/RadarCPU.cpp
 )
 
 add_dependencies(radarays 
@@ -110,38 +102,44 @@ add_dependencies(radarays
    ${PROJECT_NAME}_gencfg
 )
 
-target_link_libraries(
-    radarays
+target_link_libraries(radarays
     ${rmagine_LIBRARIES}
+    ${catkin_LIBRARIES}
+    ${rmagine_LIBRARIES}
+    ${OpenCV_LIBS}
 )
 
+install(TARGETS radarays
+    ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+    RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
 
-
-if(CUDA_FOUND)
-message(WARNING "BUILD radarays_cuda")
-    add_library(radarays_cuda SHARED
+if(RADARAYS_WITH_GPU)
+    add_library(radarays_gpu SHARED
         src/radarays_ros/image_algorithms.cu
         src/radarays_ros/radar_algorithms.cu
+        src/radarays_ros/RadarGPU.cpp
     )
-    add_dependencies(radarays_cuda 
+    add_dependencies(radarays_gpu 
         ${${PROJECT_NAME}_EXPORTED_TARGETS}
         ${catkin_EXPORTED_TARGETS}
         ${PROJECT_NAME}_gencfg
     )
-    target_link_libraries(radarays_cuda
+    target_link_libraries(radarays_gpu
         ${CUDA_LIBRARIES}
         radarays
     )
-
-endif(CUDA_FOUND)
-
+    install(TARGETS radarays_gpu
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+    )
+endif(RADARAYS_WITH_GPU)
 
 add_executable(radar_simulator
     src/radar_simulator.cpp
-    src/radarays_ros/ros_helper.cpp
-    src/radarays_ros/Radar.cpp
-    src/radarays_ros/RadarCPU.cpp
-    src/radarays_ros/RadarGPU.cpp)
+)
 
 add_dependencies(radar_simulator 
     ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -158,15 +156,12 @@ target_link_libraries(radar_simulator
 )
 
 
-if(CUDA_FOUND)
-    target_compile_definitions(radar_simulator PUBLIC WITH_CUDA)
+if(RADARAYS_WITH_GPU)
+    target_compile_definitions(radar_simulator PUBLIC RADARAYS_WITH_GPU)
     target_link_libraries(radar_simulator
-        radarays_cuda
+        radarays_gpu
     )
-    
-
-    message(WARNING "LINK radarays_cuda")
-endif(CUDA_FOUND)
+endif(RADARAYS_WITH_GPU)
 
 add_executable(ray_reflection_test src/ray_reflection_test.cpp)
 

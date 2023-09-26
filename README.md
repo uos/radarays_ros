@@ -13,7 +13,7 @@ Mainly tested on:
 - AMD Ryzen 7 3800X
 - NVIDIA GeForce RTX 2070 SUPER
 
-And others: see paper.
+And others: see paper (preprint is coming soon).
 
 ## MulRan
 
@@ -37,15 +37,14 @@ The results should look as follows:
 
 Left is the real radar polar image from the MulRan datasets. Right is the RadaRays simulated polar image.
 
-TODO: link to Youtube video of complete sequence.
-
+Videos: https://youtube.com/playlist?list=PL9wBuzh6ev06rcl8ksSnxRtv-7jAkR_wx
 
 ## BRDF
 
 Easily customize the models reflection parameters using the following interactive tool:
 
 ```console
-rosrun radaray_ros 
+rosrun radaray_ros radarays_snell_fresnel_brdf.py
 ```
 
 ![BRDF](dat/radarays_snell_fresnel_brdf.png)
@@ -54,7 +53,7 @@ rosrun radaray_ros
 
 Please reference the following papers when using RadaRays in your scientific work.
 
-TODO
+TODO (preprint)
 
 ## Roadmap
 

@@ -23,9 +23,15 @@
     <rosparam param="transform">[0, 0, 0.2, 0, 0, 0]</rosparam>
 </node>
 
-# mesh
-<include file="$(find radarays_ros)/launch/mesh_publisher.launch">
-    <arg name="meshfile" value="$(arg meshfile)" />
-</include>
+
+# mesh visualization
+<group if="$(arg gui)">
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find radarays_ros)/rviz/mulran.rviz">
+        <rosparam param="rviz_map_plugin" subst_value="True">
+            Map3D: $(arg meshfile)
+        </rosparam>
+    </node>
+</group>
+
 
 </launch>

@@ -15,13 +15,8 @@
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" /> -->
 
 
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6.yaml" />
-<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_v6_laserlike.yaml" /> -->
-<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_200.yaml" />
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_400.yaml" />
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_600.yaml" />
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_runtime_800.yaml" /> -->
-
+<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg.yaml" />
+<!-- <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_dyncfg_laserlike.yaml" /> -->
 
 <node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate) --pause" output="screen" />
 
@@ -30,6 +25,7 @@
     <param name="map_frame" type="string" value="map" />
     <param name="sync_topic" type="string" value="/Navtech/Polar" />
     <param name="sensor_frame" type="string" value="radar_polar" />
+    # Load material file here
     <rosparam command="load" file="$(find radarays_ros)/config/mulran_kaist02.yaml" />
 </node>
 

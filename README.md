@@ -17,7 +17,6 @@ And others: see paper (preprint is coming soon).
 
 ## MulRan
 
-
 Demonstration of simulating rotating FMCW radar data in large-scale triangle meshes from MulRan datasets. We reconstructed a mesh of the sequences DCC, and KAIST, and added a localization frame to each bag file using MICP-L as described here: [https://github.com/aock/micp_experiments/tree/main/micp_mulran](https://github.com/aock/micp_experiments/tree/main/micp_mulran). The final bag files are piped to RadaRays. The simulation given the localization is started by
 
 
@@ -60,8 +59,4 @@ Please reference the following papers when using RadaRays in your scientific wor
 
 1. Cleanup Gazebo-Plugin and publish to Github: [`https://github.com/uos/radarays_gazebo_plugin`](https://github.com/uos/radarays_gazebo_plugin)
 2. Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
-
-
-
-
 

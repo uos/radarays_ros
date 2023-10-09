@@ -53,7 +53,8 @@ rosrun radaray_ros radarays_snell_fresnel_brdf.py
 
 Please reference the following papers when using RadaRays in your scientific work.
 
-TODO (preprint)
+- Title: "RadaRays: Real-time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-accelerated Ray Tracing"
+- Preprint: https://arxiv.org/abs/2310.03505
 
 ## Roadmap
 

@@ -1,8 +1,13 @@
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
 #include <cv_bridge/cv_bridge.h>
-#include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
-#include <rmagine/simulation/OnDnSimulatorOptix.hpp>
+
+
+
+
+
+
+
 #include <rmagine/util/prints.h>
 #include <rmagine/util/StopWatch.hpp>
 #include <random>
@@ -15,23 +20,12 @@
 #include <sensor_msgs/PointCloud.h>
 
 #include <radarays_ros/radar_types.h>
-
 #include <radarays_ros/radar_math.h>
-#include <radarays_ros/image_algorithms.h>
-#include <radarays_ros/radar_algorithms.h>
-#include <radarays_ros/image_algorithms.cuh>
-#include <radarays_ros/radar_algorithms.cuh>
-
-
 #include <radarays_ros/RadarParams.h>
-
 #include <actionlib/server/simple_action_server.h>
 #include <radarays_ros/GenRadarImageAction.h>
 
-
 #include <radarays_ros/GetRadarParams.h>
-
-
 
 #include <opencv2/highgui.hpp>
 
@@ -39,9 +33,17 @@
 
 #include <radarays_ros/ros_helper.h>
 
+#include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
+#include <radarays_ros/image_algorithms.h>
+#include <radarays_ros/radar_algorithms.h>
 #include <radarays_ros/RadarCPU.hpp>
-#include <radarays_ros/RadarGPU.hpp>
 
+#if defined RADARAYS_WITH_GPU
+#include <rmagine/simulation/OnDnSimulatorOptix.hpp>
+#include <radarays_ros/image_algorithms.cuh>
+#include <radarays_ros/radar_algorithms.cuh>
+#include <radarays_ros/RadarGPU.hpp>
+#endif // defined RADARAYS_WITH_GPU
 
 
 using namespace radarays_ros;

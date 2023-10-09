@@ -26,13 +26,21 @@ include_directories(
     ${catkin_INCLUDE_DIRS}
 )
 
-find_package(rmagine REQUIRED)
+find_package(rmagine 2.2.1...
+COMPONENTS
+    core
+OPTIONAL_COMPONENTS
+    embree
+    cuda
+    optix
+)
+
 include_directories(${rmagine_INCLUDE_DIRS})
 
 set(RADARAYS_ROS_LIBRARIES radarays)
 set(RADARAYS_ROS_DEFINITIONS)
 
-if(${rmagine_cuda_FOUND} AND ${rmagine_optix_FOUND})
+if(TARGET rmagine::optix)
     list(APPEND RADARAYS_ROS_LIBRARIES radarays_gpu)
     set(RADARAYS_WITH_GPU True)
     list(APPEND RADARAYS_ROS_DEFINITIONS -DRADARAYS_WITH_GPU)
@@ -75,7 +83,7 @@ catkin_package(
         tf2_ros
         actionlib_msgs
     DEPENDS 
-        rmagine
+        rmagine::core
     LIBRARIES
         ${RADARAYS_ROS_LIBRARIES}
 )
@@ -103,9 +111,9 @@ add_dependencies(radarays
 )
 
 target_link_libraries(radarays
-    ${rmagine_LIBRARIES}
+    rmagine::core
+    rmagine::embree
     ${catkin_LIBRARIES}
-    ${rmagine_LIBRARIES}
     ${OpenCV_LIBS}
 )
 
@@ -129,6 +137,7 @@ if(RADARAYS_WITH_GPU)
     target_link_libraries(radarays_gpu
         ${CUDA_LIBRARIES}
         radarays
+        rmagine::optix
     )
     install(TARGETS radarays_gpu
         ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
@@ -150,11 +159,15 @@ add_dependencies(radar_simulator
 ## Specify libraries to link a library or executable target against
 target_link_libraries(radar_simulator
     ${catkin_LIBRARIES}
-    ${rmagine_LIBRARIES}
+    rmagine::core
+    rmagine::embree
     ${OpenCV_LIBS}
     radarays
 )
 
+target_compile_definitions(radar_simulator
+    PUBLIC ${RADARAYS_ROS_DEFINITIONS}
+)
 
 if(RADARAYS_WITH_GPU)
     target_compile_definitions(radar_simulator PUBLIC RADARAYS_WITH_GPU)
@@ -174,7 +187,8 @@ add_dependencies(ray_reflection_test
 ## Specify libraries to link a library or executable target against
 target_link_libraries(ray_reflection_test
     ${catkin_LIBRARIES}
-    ${rmagine_LIBRARIES}
+    rmagine::core
+    rmagine::embree
     ${OpenCV_LIBS}
     radarays
 )

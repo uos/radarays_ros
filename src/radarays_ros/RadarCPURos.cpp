@@ -1,4 +1,4 @@
-#include "radarays_ros/RadarCPU.hpp"
+#include "radarays_ros/RadarCPURos.hpp"
 
 #include <cv_bridge/cv_bridge.h>
 #include <omp.h>
@@ -14,7 +14,7 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-RadarCPU::RadarCPU(
+RadarCPURos::RadarCPURos(
     std::shared_ptr<ros::NodeHandle> nh_p,
     std::shared_ptr<tf2_ros::Buffer> tf_buffer,
     std::shared_ptr<tf2_ros::TransformListener> tf_listener,
@@ -27,7 +27,7 @@ RadarCPU::RadarCPU(
 
 }
 
-sensor_msgs::ImagePtr RadarCPU::simulate(
+sensor_msgs::ImagePtr RadarCPURos::simulate(
     ros::Time stamp)
 {
     sensor_msgs::ImagePtr msg;
@@ -36,11 +36,11 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     if(m_polar_image.rows != m_cfg.n_cells)
     {
         // m_polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
-        std::cout << "[RadarCPU] Resize canvas to " << m_cfg.n_cells << std::endl;
+        std::cout << "[RadarCPURos] Resize canvas to " << m_cfg.n_cells << std::endl;
 
         m_polar_image.resize(m_cfg.n_cells);
         
-        std::cout << "[RadarCPU] Resizing canvas - done." << std::endl;
+        std::cout << "[RadarCPURos] Resizing canvas - done." << std::endl;
     }
 
     // std::cout << "Fill canvas: " << m_polar_image.cols << "x" << m_polar_image.rows << std::endl;

@@ -36,13 +36,13 @@
 #include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
 #include <radarays_ros/image_algorithms.h>
 #include <radarays_ros/radar_algorithms.h>
-#include <radarays_ros/RadarCPU.hpp>
+#include <radarays_ros/RadarCPURos.hpp>
 
 #if defined RADARAYS_WITH_GPU
 #include <rmagine/simulation/OnDnSimulatorOptix.hpp>
 #include <radarays_ros/image_algorithms.cuh>
 #include <radarays_ros/radar_algorithms.cuh>
-#include <radarays_ros/RadarGPU.hpp>
+#include <radarays_ros/RadarGPURos.hpp>
 #endif // defined RADARAYS_WITH_GPU
 
 
@@ -132,8 +132,8 @@ int main_publisher(int argc, char** argv)
         // CPU
         rm::EmbreeMapPtr map_cpu = rm::import_embree_map(map_file);
 
-        std::cout << "RadarCPU" << std::endl;
-        radarays_sim = std::make_shared<RadarCPU>(
+        std::cout << "RadarCPURos" << std::endl;
+        radarays_sim = std::make_shared<RadarCPURos>(
             nh_p,
             tf_buffer,
             tf_listener,
@@ -146,8 +146,8 @@ int main_publisher(int argc, char** argv)
         #if defined RADARAYS_WITH_GPU
         rm::OptixMapPtr map_gpu = rm::import_optix_map(map_file);
 
-        std::cout << "RadarGPU" << std::endl;
-        radarays_sim = std::make_shared<RadarGPU>(
+        std::cout << "RadarGPURos" << std::endl;
+        radarays_sim = std::make_shared<RadarGPURos>(
             nh_p,
             tf_buffer,
             tf_listener,

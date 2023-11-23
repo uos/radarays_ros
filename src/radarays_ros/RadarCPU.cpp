@@ -35,7 +35,6 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     // 
     if(m_polar_image.rows != m_cfg.n_cells)
     {
-        // m_polar_image = cv::Mat_<unsigned char>(n_cells, radar_model.theta.size);
         std::cout << "[RadarCPU] Resize canvas to " << m_cfg.n_cells << std::endl;
 
         m_polar_image.resize(m_cfg.n_cells);

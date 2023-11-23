@@ -1,4 +1,4 @@
-#include "radarays_ros/RadarGPURos.hpp"
+#include "radarays_ros/RadarGPU.hpp"
 
 #include <cv_bridge/cv_bridge.h>
 #include <omp.h>
@@ -16,7 +16,7 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-RadarGPURos::RadarGPURos(
+RadarGPU::RadarGPU(
     std::shared_ptr<ros::NodeHandle> nh_p,
     std::shared_ptr<tf2_ros::Buffer> tf_buffer,
     std::shared_ptr<tf2_ros::TransformListener> tf_listener,
@@ -29,7 +29,7 @@ RadarGPURos::RadarGPURos(
 
 }
 
-sensor_msgs::ImagePtr RadarGPURos::simulate(
+sensor_msgs::ImagePtr RadarGPU::simulate(
     ros::Time stamp)
 {
     sensor_msgs::ImagePtr msg;

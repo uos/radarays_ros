@@ -83,7 +83,7 @@ catkin_package(
         tf2_ros
         actionlib_msgs
     DEPENDS 
-        rmagine::core
+        rmagine
     LIBRARIES
         ${RADARAYS_ROS_LIBRARIES}
 )
@@ -101,7 +101,7 @@ add_library(radarays
     src/radarays_ros/radar_algorithms.cpp
     src/radarays_ros/ros_helper.cpp
     src/radarays_ros/Radar.cpp
-    src/radarays_ros/RadarCPURos.cpp
+    src/radarays_ros/RadarCPU.cpp
 )
 
 add_dependencies(radarays 
@@ -127,7 +127,7 @@ if(RADARAYS_WITH_GPU)
     add_library(radarays_gpu SHARED
         src/radarays_ros/image_algorithms.cu
         src/radarays_ros/radar_algorithms.cu
-        src/radarays_ros/RadarGPURos.cpp
+        src/radarays_ros/RadarGPU.cpp
     )
     add_dependencies(radarays_gpu 
         ${${PROJECT_NAME}_EXPORTED_TARGETS}

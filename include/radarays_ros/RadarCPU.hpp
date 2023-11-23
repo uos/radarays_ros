@@ -13,12 +13,12 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-class RadarCPURos : public Radar 
+class RadarCPU : public Radar 
 {
 public:
     using Base = Radar;
 
-    RadarCPURos(
+    RadarCPU(
         std::shared_ptr<ros::NodeHandle> nh_p,
         std::shared_ptr<tf2_ros::Buffer> tf_buffer,
         std::shared_ptr<tf2_ros::TransformListener> tf_listener,
@@ -34,7 +34,7 @@ protected:
     rm::EmbreeMapPtr m_map;
 };
 
-using RadarCPURosPtr = std::shared_ptr<RadarCPURos>;
+using RadarCPUPtr = std::shared_ptr<RadarCPU>;
 
 } // namespace radarays
 

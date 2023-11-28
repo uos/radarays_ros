@@ -35,7 +35,6 @@ Radar::Radar(
 
     loadParams();
 
-
     dynamic_reconfigure::Server<RadarModelConfig>::CallbackType f;
     f = boost::bind(&Radar::updateDynCfg, this, _1, _2);
     m_dyn_rec_server.setCallback(f);

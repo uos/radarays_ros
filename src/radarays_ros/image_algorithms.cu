@@ -1,6 +1,7 @@
 #include "radarays_ros/image_algorithms.cuh"
 
 
+
 namespace radarays_ros 
 {
 
@@ -204,18 +205,18 @@ void fill_perlin_noise_hilo_kernel(
     unsigned int width, unsigned int height,
     double off_x, double off_y,
     double scale_low, double scale_high,
-    double p_low)
+    double p_low,
+    AmbientNoiseParams params)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    
-    float ambient_noise_at_signal_0 = 0.1;
-    float ambient_noise_at_signal_1 = 0.03;
-    float ambient_noise_energy_min = 0.05;
-    float ambient_noise_energy_max = 0.08;
-    float ambient_noise_energy_loss = 0.05;
-    float resolution = 0.0595238;
+    // float ambient_noise_at_signal_0 = params.noise_at_signal_0;
+    // float ambient_noise_at_signal_1 = params.noise_at_signal_1;
+    // float ambient_noise_energy_min = params.noise_energy_min;
+    // float ambient_noise_energy_max = params.noise_energy_max;
+    // float ambient_noise_energy_loss = params.noise_energy_loss;
+    // float resolution = params.resolution;
 
     if (x < width && y < height && y >= 0 && x >= 0)
     {
@@ -235,8 +236,8 @@ void fill_perlin_noise_hilo_kernel(
 
         float signal_ = 1.0 - ((signal - signal_min) / signal_amp);
 
-        float noise_at_0 = signal_amp * ambient_noise_at_signal_0;
-        float noise_at_1 = signal_amp * ambient_noise_at_signal_1;
+        float noise_at_0 = signal_amp * params.noise_at_signal_0;
+        float noise_at_1 = signal_amp * params.noise_at_signal_1;
 
         float signal__ = std::pow(signal_, 4.0);
 
@@ -244,13 +245,13 @@ void fill_perlin_noise_hilo_kernel(
 
         // noise_amp * p * signal_max;
         
-        float noise_energy_max = signal_max * ambient_noise_energy_max;
-        float noise_energy_min = signal_max * ambient_noise_energy_min;
-        float energy_loss = ambient_noise_energy_loss;
+        float noise_energy_max = signal_max * params.noise_energy_max;
+        float noise_energy_min = signal_max * params.noise_energy_min;
+        float energy_loss = params.noise_energy_loss;
 
         float y_noise = noise_amp * p;
 
-        float range = (static_cast<float>(y) + 0.5) * resolution;
+        float range = (static_cast<float>(y) + 0.5) * params.resolution;
 
         y_noise = y_noise + (noise_energy_max - noise_energy_min) * exp(-energy_loss * range) + noise_energy_min;
         y_noise = abs(y_noise);
@@ -265,7 +266,8 @@ void fill_perlin_noise_hilo(
     unsigned int width, unsigned int height,
     double off_x, double off_y,
     double scale_low, double scale_high,
-    double p_low)
+    double p_low,
+    AmbientNoiseParams params)
 {
     dim3 cthreads(16, 16);
     dim3 cblocks(
@@ -276,7 +278,7 @@ void fill_perlin_noise_hilo(
 
     fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
         img.raw(), max_vals.raw(), width, height, 
-        off_x, off_y, scale_low, scale_high, p_low);
+        off_x, off_y, scale_low, scale_high, p_low, params);
     
 }
 
@@ -286,7 +288,8 @@ void fill_perlin_noise_hilo(
     unsigned int width, unsigned int height,
     double off_x, double off_y,
     double scale_low, double scale_high,
-    double p_low)
+    double p_low,
+    AmbientNoiseParams params)
 {
     dim3 cthreads(16, 16);
     dim3 cblocks(
@@ -297,7 +300,7 @@ void fill_perlin_noise_hilo(
 
     fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
         img.raw(), max_vals.raw(), width, height, 
-        off_x, off_y, scale_low, scale_high, p_low);
+        off_x, off_y, scale_low, scale_high, p_low, params);
     
 }
 

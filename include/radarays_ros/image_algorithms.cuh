@@ -10,6 +10,8 @@
 
 #include <rmagine/types/MemoryCuda.hpp>
 
+#include <radarays_ros/radar_types.h>
+
 namespace rm = rmagine;
 
 namespace radarays_ros
@@ -27,7 +29,8 @@ void fill_perlin_noise_hilo(
     unsigned int width, unsigned int height,
     double off_x, double off_y,
     double scale_low, double scale_high,
-    double p_low
+    double p_low,
+    AmbientNoiseParams params = {}
 );
 
 void fill_perlin_noise_hilo(
@@ -36,7 +39,8 @@ void fill_perlin_noise_hilo(
     unsigned int width, unsigned int height,
     double off_x, double off_y,
     double scale_low, double scale_high,
-    double p_low
+    double p_low,
+    AmbientNoiseParams params = {}
 );
 
 } // namespace radarays_ros

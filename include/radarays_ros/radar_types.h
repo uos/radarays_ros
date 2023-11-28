@@ -120,6 +120,16 @@ struct DirectedWave
     }
 };
 
+struct AmbientNoiseParams
+{
+    float noise_at_signal_0 = 0.1;
+    float noise_at_signal_1 = 0.03;
+    float noise_energy_min = 0.05;
+    float noise_energy_max = 0.08;
+    float noise_energy_loss = 0.05;
+    float resolution = 0.0595238;
+};
+
 } // namespace radarays_ros
 
 #endif // RADARAYS_ROS_RADAR_TYPES_H

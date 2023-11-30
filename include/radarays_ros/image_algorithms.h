@@ -105,6 +105,28 @@ static double perlin_noise(
     return r;
 }
 
+static double perlin_noise_hilo(
+    double off_x, double off_y,
+    double x, double y,
+    double scale_low, double scale_high,
+    double p_low)
+{
+    // low freq perlin
+    // const double scale_low = 0.05;
+    // high freq perlin
+    // const double scale_high = 0.2;
+
+    double p_perlin_low = perlin_noise(
+        off_x + x * scale_low, 
+        off_y + y * scale_low);
+    
+    double p_perlin_high = perlin_noise(
+        off_x + x * scale_high, 
+        off_y + y * scale_high);
+
+    return p_low * p_perlin_low + (1.0 - p_low) * p_perlin_high;
+}
+
 
 static void fill_perlin_noise(
     cv::Mat_<uchar>& img,

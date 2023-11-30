@@ -211,20 +211,67 @@ void fill_perlin_noise_hilo_kernel(
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    // float ambient_noise_at_signal_0 = params.noise_at_signal_0;
-    // float ambient_noise_at_signal_1 = params.noise_at_signal_1;
-    // float ambient_noise_energy_min = params.noise_energy_min;
-    // float ambient_noise_energy_max = params.noise_energy_max;
-    // float ambient_noise_energy_loss = params.noise_energy_loss;
-    // float resolution = params.resolution;
+    if (x < width && y < height && y >= 0 && x >= 0)
+    {
+        float max_val = max_vals[x];
+        float signal = img[x * height + y];
+        float p = perlin_noise_hilo(
+            off_x, off_y,
+            x, y,
+            scale_low, scale_high,
+            p_low); // [-1.0,1.0]
+
+        // verwurschteltn
+        float signal_min = 0;
+        float signal_max = max_val;
+        float signal_amp = signal_max - signal_min;
+
+        float signal_ = 1.0 - ((signal - signal_min) / signal_amp);
+
+        float noise_at_0 = signal_amp * params.noise_at_signal_0;
+        float noise_at_1 = signal_amp * params.noise_at_signal_1;
+
+        float signal__ = std::pow(signal_, 4.0);
+
+        float noise_amp = (signal__ * noise_at_0 + (1.0 - signal__) * noise_at_1);
+
+        // noise_amp * p * signal_max;
+        
+        float noise_energy_max = signal_max * params.noise_energy_max;
+        float noise_energy_min = signal_max * params.noise_energy_min;
+        float energy_loss = params.noise_energy_loss;
+
+        float y_noise = noise_amp * p;
+
+        float range = (static_cast<float>(y) + 0.5) * params.resolution;
+
+        y_noise = y_noise + (noise_energy_max - noise_energy_min) * exp(-energy_loss * range) + noise_energy_min;
+        y_noise = abs(y_noise);
+
+        img[x * height + y] = signal + y_noise;
+    }
+}
+
+
+__global__ 
+void fill_perlin_noise_hilo_kernel(
+    float* img,
+    const float* max_vals,
+    unsigned int width, unsigned int height,
+    const float* off_x, const float* off_y,
+    double scale_low, double scale_high,
+    double p_low,
+    AmbientNoiseParams params)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (x < width && y < height && y >= 0 && x >= 0)
     {
         float max_val = max_vals[x];
         float signal = img[x * height + y];
-
         float p = perlin_noise_hilo(
-            off_x, off_y,
+            off_x[x], off_y[x],
             x, y,
             scale_low, scale_high,
             p_low); // [-1.0,1.0]
@@ -302,6 +349,29 @@ void fill_perlin_noise_hilo(
         img.raw(), max_vals.raw(), width, height, 
         off_x, off_y, scale_low, scale_high, p_low, params);
     
+}
+
+
+void fill_perlin_noise_hilo(
+    rm::MemView<float, rm::UNIFIED_CUDA>& img,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& max_vals,
+    unsigned int width, unsigned int height,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& off_x, 
+    const rm::MemView<float, rm::UNIFIED_CUDA>& off_y,
+    double scale_low, double scale_high,
+    double p_low, 
+    AmbientNoiseParams params)
+{
+    dim3 cthreads(16, 16);
+    dim3 cblocks(
+        static_cast<int>(std::ceil(width /
+            static_cast<double>(cthreads.x))),
+        static_cast<int>(std::ceil(height / 
+            static_cast<double>(cthreads.y))));
+
+    fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
+        img.raw(), max_vals.raw(), width, height, 
+        off_x.raw(), off_y.raw(), scale_low, scale_high, p_low, params);
 }
 
 

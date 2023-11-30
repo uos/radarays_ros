@@ -43,6 +43,18 @@ void fill_perlin_noise_hilo(
     AmbientNoiseParams params = {}
 );
 
+// one offset per column (per scan angle)
+void fill_perlin_noise_hilo(
+    rm::MemView<float, rm::UNIFIED_CUDA>& img,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& max_vals,
+    unsigned int width, unsigned int height,
+    const rm::MemView<float, rm::UNIFIED_CUDA>& off_x, 
+    const rm::MemView<float, rm::UNIFIED_CUDA>& off_y,
+    double scale_low, double scale_high,
+    double p_low,
+    AmbientNoiseParams params = {}
+);
+
 } // namespace radarays_ros
 
 

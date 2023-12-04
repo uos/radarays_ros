@@ -61,5 +61,5 @@ Please reference the following papers when using RadaRays in your scientific wor
 
 ## Roadmap
 
-- [] Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
+- [ ] Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
 

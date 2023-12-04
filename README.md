@@ -55,8 +55,11 @@ Please reference the following papers when using RadaRays in your scientific wor
 - Title: "RadaRays: Real-time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-accelerated Ray Tracing"
 - Preprint: https://arxiv.org/abs/2310.03505
 
+## Radarays Plugins
+
+- Gazebo: [`https://github.com/uos/radarays_gazebo_plugins`](https://github.com/uos/radarays_gazebo_plugin)
+
 ## Roadmap
 
-1. Cleanup Gazebo-Plugin and publish to Github: [`https://github.com/uos/radarays_gazebo_plugin`](https://github.com/uos/radarays_gazebo_plugin)
-2. Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
+- [] Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
 

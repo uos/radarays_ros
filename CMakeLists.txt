@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.2)
-project(radarays_ros)
+project(radarays_ros VERSION 1.0.1)
 
 add_compile_options(-std=c++17)
 set(CMAKE_CXX_STANDARD 17)

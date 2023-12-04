@@ -57,7 +57,7 @@ Please reference the following papers when using RadaRays in your scientific wor
 
 ## Radarays Plugins
 
-- Gazebo: [`https://github.com/uos/radarays_gazebo_plugins`](https://github.com/uos/radarays_gazebo_plugin)
+- Gazebo: [`https://github.com/uos/radarays_gazebo_plugins`](https://github.com/uos/radarays_gazebo_plugins)
 
 ## Roadmap
 

@@ -117,7 +117,6 @@ add_dependencies(radarays
 
 target_link_libraries(radarays
     rmagine::core
-    rmagine::embree
     ${catkin_LIBRARIES}
     ${OpenCV_LIBS}
 )

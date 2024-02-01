@@ -33,10 +33,14 @@
 
 #include <radarays_ros/ros_helper.h>
 
-#include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
+
 #include <radarays_ros/image_algorithms.h>
 #include <radarays_ros/radar_algorithms.h>
+
+#if defined RADARAYS_WITH_CPU
+#include <rmagine/simulation/OnDnSimulatorEmbree.hpp>
 #include <radarays_ros/RadarCPU.hpp>
+#endif // defined RADARAYS_WITH_CPU
 
 #if defined RADARAYS_WITH_GPU
 #include <rmagine/simulation/OnDnSimulatorOptix.hpp>
@@ -116,9 +120,14 @@ int main_publisher(int argc, char** argv)
 
     // available computing unit
     bool gpu_available = false;
+    bool cpu_available = false;
     #if defined RADARAYS_WITH_GPU
         gpu_available = true;
-    #endif
+    #endif // defined RADARAYS_WITH_GPU
+
+    #if defined RADARAYS_WITH_CPU
+        cpu_available = true;
+    #endif // defined RADARAYS_WITH_CPU
 
 
     if(use_gpu && !gpu_available)
@@ -126,10 +135,17 @@ int main_publisher(int argc, char** argv)
         std::cout << "Desired computing unit 'GPU' is not available on your system." << std::endl;
         return 0;
     }
+
+    if(!use_gpu && !cpu_available)
+    {
+        std::cout << "Desired computing unit 'CPU' is not available on your system." << std::endl;
+        return 0;
+    }
     
     if(!use_gpu)
     {
         // CPU
+        #if defined RADARAYS_WITH_CPU
         rm::EmbreeMapPtr map_cpu = rm::import_embree_map(map_file);
 
         std::cout << "RadarCPU" << std::endl;
@@ -141,7 +157,8 @@ int main_publisher(int argc, char** argv)
             sensor_frame,
             map_cpu
         );
-    } else { 
+        #endif // defined RADARAYS_WITH_CPU
+    } else {
         // GPU
         #if defined RADARAYS_WITH_GPU
         rm::OptixMapPtr map_gpu = rm::import_optix_map(map_file);
@@ -155,7 +172,7 @@ int main_publisher(int argc, char** argv)
             sensor_frame,
             map_gpu
         );
-        #endif
+        #endif // defined RADARAYS_WITH_GPU
     }
 
     // image transport

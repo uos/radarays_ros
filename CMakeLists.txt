@@ -46,6 +46,12 @@ if(TARGET rmagine::optix)
     list(APPEND RADARAYS_ROS_DEFINITIONS -DRADARAYS_WITH_GPU)
 endif()
 
+if(TARGET rmagine::embree)
+    list(APPEND RADARAYS_ROS_LIBRARIES radarays_cpu)
+    set(RADARAYS_WITH_CPU True)
+    list(APPEND RADARAYS_ROS_DEFINITIONS -DRADARAYS_WITH_CPU)
+endif()
+
 
 add_message_files(
   FILES
@@ -101,7 +107,6 @@ add_library(radarays
     src/radarays_ros/radar_algorithms.cpp
     src/radarays_ros/ros_helper.cpp
     src/radarays_ros/Radar.cpp
-    src/radarays_ros/RadarCPU.cpp
 )
 
 add_dependencies(radarays 
@@ -112,7 +117,6 @@ add_dependencies(radarays
 
 target_link_libraries(radarays
     rmagine::core
-    rmagine::embree
     ${catkin_LIBRARIES}
     ${OpenCV_LIBS}
 )
@@ -122,6 +126,26 @@ install(TARGETS radarays
     LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
     RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
 )
+
+if(RADARAYS_WITH_CPU)
+    add_library(radarays_cpu
+        src/radarays_ros/RadarCPU.cpp
+    )
+    add_dependencies(radarays_cpu 
+        ${${PROJECT_NAME}_EXPORTED_TARGETS}
+        ${catkin_EXPORTED_TARGETS}
+        ${PROJECT_NAME}_gencfg
+    )
+    target_link_libraries(radarays_cpu
+        radarays
+        rmagine::embree
+    )
+    install(TARGETS radarays_cpu
+        ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+        RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+    )
+endif(RADARAYS_WITH_CPU)
 
 if(RADARAYS_WITH_GPU)
     add_library(radarays_gpu SHARED
@@ -160,35 +184,44 @@ add_dependencies(radar_simulator
 target_link_libraries(radar_simulator
     ${catkin_LIBRARIES}
     rmagine::core
-    rmagine::embree
     ${OpenCV_LIBS}
     radarays
 )
 
-target_compile_definitions(radar_simulator
-    PUBLIC ${RADARAYS_ROS_DEFINITIONS}
-)
+if(RADARAYS_WITH_CPU)
+    # Enable CPU simulation
+    target_compile_definitions(radar_simulator PUBLIC RADARAYS_WITH_CPU)
+    target_link_libraries(radar_simulator
+        radarays_cpu
+    )
+endif(RADARAYS_WITH_CPU)
 
 if(RADARAYS_WITH_GPU)
+    # Enable GPU simulation
     target_compile_definitions(radar_simulator PUBLIC RADARAYS_WITH_GPU)
     target_link_libraries(radar_simulator
         radarays_gpu
     )
 endif(RADARAYS_WITH_GPU)
 
-add_executable(ray_reflection_test src/ray_reflection_test.cpp)
 
-add_dependencies(ray_reflection_test 
-    ${${PROJECT_NAME}_EXPORTED_TARGETS}
-    ${catkin_EXPORTED_TARGETS}
-    ${PROJECT_NAME}_gencfg
-)
+# TESTS MAINLY PROTOTYPED WITH CPU
+if(RADARAYS_WITH_CPU)
+    add_executable(ray_reflection_test src/ray_reflection_test.cpp)
 
-## Specify libraries to link a library or executable target against
-target_link_libraries(ray_reflection_test
-    ${catkin_LIBRARIES}
-    rmagine::core
-    rmagine::embree
-    ${OpenCV_LIBS}
-    radarays
-)
+    add_dependencies(ray_reflection_test 
+        ${${PROJECT_NAME}_EXPORTED_TARGETS}
+        ${catkin_EXPORTED_TARGETS}
+        ${PROJECT_NAME}_gencfg
+    )
+
+    ## Specify libraries to link a library or executable target against
+    target_link_libraries(ray_reflection_test
+        ${catkin_LIBRARIES}
+        rmagine::core
+        rmagine::embree
+        ${OpenCV_LIBS}
+        radarays
+    )
+
+endif(RADARAYS_WITH_CPU)

@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<launch>
+
+<arg name="bagfile" default="/home/amock/datasets/VolvoCE/Volvo_CE.bag" />
+<arg name="rate" default="2.0" />
+<arg name="gui" default="false" />
+
+<node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate) --pause" output="screen" />
+
+<node pkg="radar_tools" type="radar_img_to_pcl" name="radar_img_to_pcl" output="screen">
+    <param name="frame" type="string" value="navtech" />
+    <remap from="radar_image" to="/Navtech/Polar" />
+    <rosparam command="load" param="radar" file="$(find radarays_ros)/config/navtech_volvo_ce.yaml" />
+</node>
+
+</launch>

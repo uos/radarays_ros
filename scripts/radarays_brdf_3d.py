@@ -11,9 +11,15 @@ import math
 import matplotlib
 
 # tested with:
+# Ubuntu20
 # - python 3.8.10
 # - matplotlib 3.1.2
 # - numpy 1.24.3
+# Ubuntu22
+# - python 3.10.12
+# - matplotlib 3.5.1
+# - numpy 1.26.4
+
 print("Libraries:")
 print("- matplotlib: ", matplotlib.__version__)
 print("- numpy", np.__version__)
@@ -29,6 +35,12 @@ class Arrow3D(FancyArrowPatch):
         xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, renderer.M)
         self.set_positions((xs[0], ys[0]), (xs[1], ys[1]))
         FancyArrowPatch.draw(self, renderer)
+
+    def do_3d_projection(self, renderer=None):
+        xs3d, ys3d, zs3d = self._verts3d
+        xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, self.axes.M)
+        self.set_positions((xs[0],ys[0]),(xs[1],ys[1]))
+        return np.min(zs)
 
 
 def incident_angle(ray_dir, surface_normal):

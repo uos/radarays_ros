@@ -100,6 +100,10 @@ def Gfunc(n_dot_h, o_dot_h, n_dot_o, n_dot_i):
 	return G
 
 def brdf_cook_torrance(in_dir, out_dir, normal, n1, n2, reflection_params):
+    
+    
+    
+    # color?
     incidence_energy = 1.0
     
     k_L = reflection_params[0]
@@ -110,20 +114,23 @@ def brdf_cook_torrance(in_dir, out_dir, normal, n1, n2, reflection_params):
     half = (-in_dir + out_dir)
     half /= np.linalg.norm(half)
 
-    n_dot_h = max(0.01, normal.dot(half))
-    n_dot_o = max(0.01, normal.dot(out_dir))
-    n_dot_i = max(0.01, normal.dot(-in_dir))
-    o_dot_h = max(0.01, out_dir.dot(half))
+    n_dot_h = max(0.001, normal.dot(half))
+    n_dot_o = max(0.001, normal.dot(out_dir))
+    n_dot_i = max(0.001, normal.dot(-in_dir))
+    o_dot_h = max(0.001, out_dir.dot(half))
 
     F = fresnel_reflection_coefficient(n_dot_i, k_s)
     D = Dfunc( roughness, n_dot_h ) # 1/pi
     G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i)
 
     r_s = (F*G*D) / (4.0*n_dot_i*n_dot_o)
+    result = (k_L + k_g * r_s) / np.pi
 
-    result = k_L + k_g * r_s
+    result = np.clip(result, 0.0, 1.0)
+    # Where to clamp?
+    # how to clamp with incidence_energy higher than 1?
 
-    return result * incidence_energy / np.pi
+    return result * incidence_energy
 
 def brdf_cook_torrance_snell(in_dir, out_dir, normal, n1, n2, reflection_params):
     incidence_energy = 1.0
@@ -191,7 +198,6 @@ def brdf_cook_torrance_snell(in_dir, out_dir, normal, n1, n2, reflection_params)
     r_s = (F*G*D) / (4.0*n_dot_i*n_dot_o)
 
     # print("r_s:", r_s)
-
     result = k_L + k_g * r_s
 
     return result * incidence_energy / np.pi
@@ -211,6 +217,7 @@ def brdf_blinn_phong(in_dir, out_dir, normal, n1, n2, reflection_params):
     k_s = ((8.0 + s) / 8.0) * max(0.0, n_dot_h)**s
 
     result = k_L + (k_g * k_s)
+
     return result * incidence_energy / np.pi
 
 

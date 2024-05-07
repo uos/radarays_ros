@@ -202,11 +202,13 @@ def brdf_blinn_phong(in_dir, out_dir, normal, n1, n2, reflection_params):
     half = (-in_dir + out_dir)
     half /= np.linalg.norm(half)
 
+    n_dot_h = normal.dot(half)
+
     k_L = reflection_params[0]
     k_g = reflection_params[1]
     s = reflection_params[2]
 
-    k_s = ((8.0 + s) / 8.0) * max(0.0, normal.dot(half))**s
+    k_s = ((8.0 + s) / 8.0) * max(0.0, n_dot_h)**s
 
     result = k_L + (k_g * k_s)
     return result * incidence_energy / np.pi
@@ -241,9 +243,8 @@ def brdf_blinn_phong_snell(in_dir, out_dir, normal, n1, n2, reflection_params):
     # <=>
     # half.dot(normal) == sqrt(out_dir.dot(snell_reflection) + 1) / sqrt(2)
     # 
-    # then it gets possible to correctly computing the n_dot_h for refraction
-    # 
-    # TODO: I think this is wrong
+    # analogously it gets possible to compute the n_dot_h for refraction 
+    # using "snell_refraction" vector instead of the "snell_reflection" vector
 
     result = 0.0
 

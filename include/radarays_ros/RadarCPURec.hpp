@@ -39,7 +39,7 @@ public:
     // function that is generating 
     void setWaveGenFunc(WaveGenFunc wave_gen_func);
 
-    std::optional<Intersection> moveUntilIntersection(DirectedWave& wave) const;
+    std::optional<Intersection> intersect(DirectedWave& wave) const;
 
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
 

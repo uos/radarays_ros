@@ -69,7 +69,7 @@ void RadarCPURec::setWaveGenFunc(WaveGenFunc wave_gen_func)
 }
 
 
-std::optional<Intersection> RadarCPURec::moveUntilIntersection(DirectedWave& wave) const
+std::optional<Intersection> RadarCPURec::intersect(DirectedWave& wave) const
 {
     struct RTCRayHit rayhit;
     rayhit.ray.org_x = wave.ray.orig.x;

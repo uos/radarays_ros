@@ -1,9 +1,13 @@
 #ifndef RADARAYS_ROS_RADAR_TYPES_H
 #define RADARAYS_ROS_RADAR_TYPES_H
 
+#include <functional>
 #include <rmagine/math/types.h>
 #include "radar_math.h"
+#include "definitions.h"
 
+
+namespace rm = rmagine; // TODO: remvove this from headers
 
 namespace radarays_ros
 {
@@ -73,8 +77,7 @@ struct DirectedWave
     // 0.5: unpolarized
     double polarization;
 
-    // velocity (normally given in [m/ns]) (changed if transmitted to another medium)
-    double velocity;
+    
 
     // frequency of wave (GHz) (unchanged during propagation)
     double frequency;
@@ -82,34 +85,21 @@ struct DirectedWave
     // time of travelling [ns]
     double time;
 
-    
-    const Material* current_material;
+    // material
+    const Material* material;
 
+
+    // obsolete fields: TODO remove
+
+    // velocity (normally given in [m/ns]) (changed if transmitted to another medium)
+    double velocity;
     // current medium (is this redundant with velocity?)
     unsigned int material_id;
-    
-    void setWaveLength(double l)
-    {
-        velocity = l * frequency;
-    }
+
+    double getVelocity() const;
 
     // l = v / f
-    double waveLength() const
-    {
-        return velocity / frequency;
-    }
-
-    void setIndexOfRefraction(double n)
-    {
-        // v = c/n
-        velocity = M_C_IN_M_PER_NANOSECOND / n;
-    }
-
-    double indexOfRefraction() const 
-    {
-        // n = c/v
-        return M_C_IN_M_PER_NANOSECOND / velocity;
-    }
+    double getWaveLength() const;
 
     static DirectedWave Zeros()
     {
@@ -122,19 +112,9 @@ struct DirectedWave
         return ret;
     }
 
-    DirectedWave& moveInplace(double distance)
-    {
-        ray.orig = ray.orig + ray.dir * distance;
-        time += distance / velocity;
-        return *this;
-    }
+    DirectedWave& moveInplace(double distance);
 
-    DirectedWave move(double distance) const
-    {
-        DirectedWave wave = *this;
-        wave.moveInplace(distance);
-        return wave;
-    }
+    DirectedWave move(double distance) const;
 };
 
 struct AmbientNoiseParams
@@ -146,6 +126,59 @@ struct AmbientNoiseParams
     float noise_energy_loss = 0.05;
     float resolution = 0.0595238;
 };
+
+
+
+using BRDF = std::function<float( // returns reflectance value
+            const DirectedWave&, // incident wave
+            const rm::Vector3&, // surface normal
+            const Material*, // surface material
+            const rm::Vector3& // out_direction
+            )>;
+
+
+// template for a BRDF function
+struct Material
+{
+    // refractive index of material
+    // can be computed by n = c/v
+    // set to a really high value to
+    double n;
+
+    // value between 0-1. how much of the refracted energy is transmitted through the material (per meter!)
+    // absorption = 1 - transmittance
+    // extreme example:
+    // - black color is not reflecting light nor does it transmit the light through the material as glass
+    // rather than having a fixed parameter have absorption per distance instead
+    // like this you can calculate the actual absorpt part after the next intersection test
+    // 1. continue shooting
+    // 2. compute the the absoption via absorption = 1-(1-absorption_per_m)^(meter)
+    // see if the energy falls below a value. If yes, finish; if no, continue
+    // special case: if absorption is equal to 1, it is clear that everything is absorpt. We can stop without doing the first intersection test
+    double transmittance;
+    
+    // variable number of parameters used in brdf func
+    std::vector<float> brdf_params;
+    // user specific brdf function
+    BRDF brdf_func;
+
+    float brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const
+    {
+        return brdf_func(incidence, normal, this, out_direction);
+    }
+};
+
+struct Intersection
+{
+    // surface normal
+    rm::Vector normal;
+
+    const Material* material;
+
+    float brdf(const DirectedWave& incidence, 
+        const rm::Vector3& out_direction) const;
+};
+
 
 } // namespace radarays_ros
 

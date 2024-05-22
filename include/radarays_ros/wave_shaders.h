@@ -26,62 +26,12 @@ namespace radarays_ros
 {
 
 struct SurfacePatch;
-struct Material;
 
 
-// template for a BRDF function
-using BRDF = std::function<float( // returns reflectance value
-            const DirectedWave&, // incident wave
-            const rm::Vector3&, // surface normal
-            const Material*, // surface material
-            const rm::Vector3& // out_direction
-            )>;
-
-struct Material
-{
-    // refractive index of material
-    // can be computed by n = c/v
-    // set to a really high value to
-    float n;
-
-    // value between 0-1. how much of the transmitted energy is absorped by the material
-    // extreme example:
-    // - black color is not reflecting light nor does it transmit the light through the material as glass
-    float absorption;
-    // TODO: Check the following idea
-    // rather than having a fixed parameter have absorption per distance instead
-    // like this you can calculate the actual absorpt part after the next intersection test
-    // 1. continue shooting
-    // 2. compute the the absoption via absorption = 1-(1-absorption_per_m)^(meter)
-    // see if the energy falls below a value. If yes, finish; if no, continue
-    // special case: if absorption is equal to 1, it is clear that everything is absorpt. We can stop without doing the first intersection test
-
-    // variable number of parameters used in brdf func
-    std::vector<float> brdf_params;
-    // user specific brdf function
-    BRDF brdf_func;
-
-    float brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const
-    {
-        return brdf_func(incidence, normal, this, out_direction);
-    }
-};
 
 // use this for convencience
 // 
-struct Intersection
-{
-    // surface normal
-    rm::Vector normal;
 
-    const Material* material;
-
-    float brdf(const DirectedWave& incidence, 
-        const rm::Vector3& out_direction) const
-    {
-        return material->brdf(incidence, normal, out_direction);
-    }
-};
 
 // // legacy code - deprectated
 // struct SurfacePatch
@@ -105,9 +55,15 @@ struct Intersection
 //     // - 1: roughness in [0,1]
 // };
 
-float compute_fzero(const DirectedWave& incidence, const Material& mat)
+
+float compute_fzero(const Material* m1, const Material* m2)
 {
-    return compute_fzero(incidence.indexOfRefraction(), mat.n);
+    return compute_fzero(m1->n, m2->n);
+}
+
+float compute_fzero(const DirectedWave& incidence, const Material* mat)
+{
+    return compute_fzero(incidence.material, mat);
 }
 
 float fresnel_reflection_coefficient(float h_dot_in, float F0)
@@ -206,7 +162,7 @@ float cook_torrance_brdf(
     // TODO: check how to determine k_s
     // float k_s = surface.reflection_parameters[2] // non-metallic-ness - TODO: is this right?
     // or from actual surface
-    float k_s = compute_fzero(incidence.indexOfRefraction(), material->n);
+    float k_s = compute_fzero(incidence.material, material);
 
     const rm::Vector half = (-incidence.ray.dir + out_direction).normalize();
 

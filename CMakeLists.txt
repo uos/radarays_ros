@@ -104,6 +104,7 @@ find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
 add_library(radarays
+    src/radarays_ros/radar_types.cpp
     src/radarays_ros/radar_algorithms.cpp
     src/radarays_ros/ros_helper.cpp
     src/radarays_ros/Radar.cpp

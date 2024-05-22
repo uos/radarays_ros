@@ -210,7 +210,7 @@ def render():
     # Tp = Tfactor * tp * tp
     # Teff = 0.5 * (Ts + Tp)
 
-    print("Reflectance:",     Rs, Rp, Reff)
+    print("Reflectance:",    Rs, Rp, Reff)
     print("Transmittance: ", Ts, Tp, Teff)
     # print("1.0 =", Reff + Teff)
 

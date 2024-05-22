@@ -2,6 +2,8 @@
 #define RADARAYS_ROS_RADAR_TYPES_H
 
 #include <rmagine/math/types.h>
+#include "radar_math.h"
+
 
 namespace radarays_ros
 {
@@ -47,7 +49,6 @@ struct DirectedWaveAttributes
     // current medium (is this redundant with velocity?)
     unsigned int material_id;
 
-
     static DirectedWaveAttributes Zeros()
     {
         DirectedWaveAttributes ret;
@@ -57,7 +58,6 @@ struct DirectedWaveAttributes
         ret.velocity = 0.0;
         return ret;
     }
-
 };
 
 struct DirectedWave
@@ -67,31 +67,48 @@ struct DirectedWave
     // !!Not!! energy of wave ( E = h * v / l ). 
     // INSTEAD: user defined energy. 
     double energy;
-    // ratio of s-polarized and p-polarized
+    // ratio of s-polarized and p-polarized (currently mostly unused)
     // 1.0: only s-polarized waves
     // 0.0: only p-polarized waves
     // 0.5: unpolarized
     double polarization;
-    // velocity (normally given in [m/ns])
+
+    // velocity (normally given in [m/ns]) (changed if transmitted to another medium)
     double velocity;
-    // frequency of wave (GHz)
+
+    // frequency of wave (GHz) (unchanged during propagation)
     double frequency;
     
-    // time of travelling [ns?]
+    // time of travelling [ns]
     double time;
+
+    
+    const Material* current_material;
 
     // current medium (is this redundant with velocity?)
     unsigned int material_id;
     
-    void setLength(double l)
+    void setWaveLength(double l)
     {
         velocity = l * frequency;
     }
 
     // l = v / f
-    double length() const
+    double waveLength() const
     {
         return velocity / frequency;
+    }
+
+    void setIndexOfRefraction(double n)
+    {
+        // v = c/n
+        velocity = M_C_IN_M_PER_NANOSECOND / n;
+    }
+
+    double indexOfRefraction() const 
+    {
+        // n = c/v
+        return M_C_IN_M_PER_NANOSECOND / velocity;
     }
 
     static DirectedWave Zeros()

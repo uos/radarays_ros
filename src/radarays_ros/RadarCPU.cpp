@@ -108,12 +108,12 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     wave.polarization =  0.5;
     wave.frequency    = 76.5; // GHz
     wave.velocity     =  0.3; // m / ns - speed in air
-    wave.material_id  =  0;   // air
-    wave.time         =  0.0; // ns
+    wave.material_id  =  0;   // 0: air
+    wave.time         =  0.0; // in ns
     wave.ray.orig = {0.0, 0.0, 0.0};
     wave.ray.dir = {1.0, 0.0, 0.0};
 
-    // el = sw();
+    
 
     int n_cells = m_polar_image.rows;
     int n_angles = m_polar_image.cols;
@@ -150,12 +150,11 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
     bool enable_omp = false;
     
     // std::cout << "Threads: " << OMP_NUM_THREADS << std::endl;
+    std::cout << "Start simulating" << std::endl;
 
-
-    #pragma omp parallel for if(!m_cfg.include_motion)
+    // #pragma omp parallel for if(!m_cfg.include_motion)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
-
         int tid = 0;
         if(!m_cfg.include_motion)
         {
@@ -549,8 +548,8 @@ sensor_msgs::ImagePtr RadarCPU::simulate(
 
     double el_radar_sim = sw_radar_sim();
 
-    // std::cout << "SIM in " << el_radar_sim << "s" << std::endl;
-    std::cout << std::fixed << std::setprecision(8) << el_radar_sim << std::endl;
+    std::cout << "SIM in " << std::fixed << std::setprecision(8) << el_radar_sim << "s" << std::endl;
+    std::cout << " - polar image: " << m_polar_image.size() << std::endl; 
 
     msg = cv_bridge::CvImage(
                 std_msgs::Header(), 

@@ -9,6 +9,8 @@
 #include <rmagine/types/sensor_models.h>
 #include <rmagine/types/Memory.hpp>
 
+#include <math.h>
+
 namespace rm = rmagine;
 
 namespace radarays_ros
@@ -156,6 +158,9 @@ inline float maxwell_boltzmann_pdf(
     return sqrt(2.0 / M_PI) * xx * exp(- xx / (2 * aa)) / aaa;
 }
 
+
+
+
 /**
  * @brief computes the total energy of back reflection
  * 
@@ -165,7 +170,7 @@ inline float maxwell_boltzmann_pdf(
  * @param specular 
  * @return float 
  */
-inline float back_reflection_shader(
+inline float lambertian_phong_simple(
     float incidence_angle, 
     float energy,
     float diffuse,
@@ -178,6 +183,7 @@ inline float back_reflection_shader(
     // I_diffuse 1 -> 0
     float IdotR = cos(incidence_angle);
     float I_diffuse = 1.0;
+
     float I_specular = pow(IdotR, specular_exp);
 
     // polynom
@@ -186,9 +192,143 @@ inline float back_reflection_shader(
     return I_total * energy;
 }
 
-// inline float viewpoint_shader(
+/**
+ * implementation explained in RadaRays paper
+ * 
+*/
+inline float lambertian_phong(
+    float incidence_angle,
+    float energy,
+    float A,
+    float B,
+    float C)
+{
+    const float S = 1.0 - A - B;
+    const float Iret = A + B * cos(incidence_angle) + S * pow(cos(incidence_angle), C);
+    return Iret * energy;
+}
 
-// )
+/**
+ * A, B and C semantics depend on the used shader. Read the respective code docs
+ * 
+ * back reflection shading is a special case where the light source is at the same point as the sensor
+*/
+inline float back_reflection_shader(
+    float incidence_angle, 
+    float energy,
+    float A,
+    float B, 
+    float C)
+{
+    return lambertian_phong_simple(incidence_angle, energy, A, B, C);
+}
+
+// //-------------------------------------------------------------------------//
+// // Cook-Torrance and related microfacet BRDFs
+// float Dfunc( float roughness, float n_dot_h )
+// {
+// 	// The original paper of Cook and Torrance says:
+// 	// float D = (1/(m*m * pow( cos(alpha), 4.0))) * exp (-pow(tan(alpha)/m, 2.0));
+// 	// with alpha = the angle between H and N
+
+// 	// The book Real-Time Rendering 4 (eq 9.35) says:
+// 	float D =
+// 		std::max(0.f, n_dot_h) // This is == Xi+(n,m) in the book
+// 		/ (M_PI * roughness*roughness * pow(n_dot_h , 4.0))
+// 		* exp(
+// 		      (n_dot_h*n_dot_h - 1)
+// 		      /
+// 		      (roughness*roughness * n_dot_h*n_dot_h)
+// 		      )
+// 		;
+// 	// The book says dot(n,m) but that is the same as dot(n,h) since
+// 	// only micronormals m that are exactly = h contribute.
+// 	// The term in the exponent is in fact equivalent to the tan term in
+// 	// cookpaper.pdf, since tan^2(theta) == ((1-theta^2)/theta^2)
+// 	// See http://www.codinglabs.net/article_physically_based_rendering_cook_torrance.aspx
+// 	return D;
+// }
+
+// inline float Dfunc_GGX( float roughness, float n_dot_h )
+// {
+// 	// This is the GGX distribution function (eq 9.41) from Real-Time Rendering 4
+// 	float D =
+// 		(std::max(0.f, n_dot_h) * roughness*roughness)
+// 		/
+// 		( M_PI * pow((1 + n_dot_h*n_dot_h * (roughness*roughness-1)), 2) );
+// 	return D;
+// }
+
+// inline float Gfunc( float n_dot_h, float o_dot_h,
+//              float n_dot_o, float n_dot_i )
+// {
+// 	float G1 = 2 * (n_dot_h * n_dot_o) / (o_dot_h);
+// 	float G2 = 2 * (n_dot_h * n_dot_i) / (o_dot_h);
+// 	float G = std::min( G1, G2 );
+// 	G = std::min( 1.f, G );
+// 	return G;
+// }
+
+// inline double clamp(double d, double min, double max) 
+// {
+//   const double t = d < min ? min : d;
+//   return t > max ? max : t;
+// }
+
+// inline float clamp(float d, float min, float max) {
+//   const float t = d < min ? min : d;
+//   return t > max ? max : t;
+// }
+
+// // Using eq (9.34) from RTR4 adapted to radar waves instead of colors
+// inline float cook_torrance_brdf(
+//     const float int_energy,
+//     const rm::Vector in_direction,
+//     const rm::Vector out_direction, 
+//     const rm::Vector normal,
+//     const float A, // diffuse in [0, 1]
+//     const float B // roughness in [0, 1]
+//     )
+// {
+//     const rm::Vector in_dir_inv = -in_direction;
+
+// 	const float k_L = A;
+// 	const float k_g = 1 - k_L;
+//     const float roughness = B; 
+
+//     rm::Vector h = (in_dir_inv + out_direction).normalize(); // half-vector
+
+// 	float n_dot_h = std::max(0.f, normal.dot(h));
+// 	float n_dot_o = std::max(0.f, normal.dot(out_direction));
+// 	float n_dot_i = std::max(0.f, normal.dot(in_dir_inv));
+// 	float o_dot_h = std::max(0.f, out_direction.dot(h) );
+
+//     // fresnel is already hidden in the energy term 
+// 	float D = Dfunc( roughness, n_dot_h ); // Use `Dfunc` or `Dfunc_GGX`
+// 	float G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i );
+//     // float F = ...
+
+//     // why the times 1?
+// 	float I = k_L + k_g * 1 * ( (G*D) / ( 4.0 * n_dot_i * n_dot_o ) );
+
+// 	float Iref = clamp(I, 0.f, 1.f);
+// 	return Iref * int_energy;
+// }
+
+// /**
+//  * returns a density value of energy function with integral -> int_energy
+// */
+// inline float reflection_shader(
+//     float int_energy,
+//     const rm::Vector incidence_dir,
+//     const rm::Vector reflection_dir,
+//     const rm::Vector normal,
+//     float A,
+//     float B,
+//     float C)
+// {
+//     return cook_torrance_brdf(int_energy, incidence_dir, reflection_dir, normal, A, B);
+// }
 
 
 /**
@@ -289,6 +429,8 @@ inline std::vector<float> make_denoiser_triangular(
     float verschmierer_min = 0.0;
     float verschmierer_max = 1.0;
 
+
+
     for(size_t i=0; i<width; i++)
     {
         float p;
@@ -303,7 +445,9 @@ inline std::vector<float> make_denoiser_triangular(
         verschmierer[i] = p * verschmierer_max + (1.0 - p) * verschmierer_min;
     }
 
+    // sum is 1
     normalize_inplace(verschmierer);
+    
     return verschmierer;
 }
 

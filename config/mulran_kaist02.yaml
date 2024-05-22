@@ -7,14 +7,16 @@
 #   - how much percentage is transmitted or reflected? (fresnel)
 materials:
   # air
-  - velocity: 0.3
-    ambient: 1.0
-    diffuse: 0.0
+  - type: 0 # standard
+    velocity: 0.3
+    ambient:  1.0
+    diffuse:  0.0
     specular: 1.0
   # wall stone
-  - velocity: 0.0
-    ambient: 1.0
-    diffuse: 0.0
+  - type: 0 # blinn-phong
+    velocity: 0.0
+    ambient:  1.0
+    diffuse:  0.0
     specular: 3000.0
 
 material_id_air: 0

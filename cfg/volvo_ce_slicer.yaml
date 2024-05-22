@@ -1,0 +1,7 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  col_max: 400
+  col_min: 0
+  row_max: 1000
+  row_min: 0
+state: []

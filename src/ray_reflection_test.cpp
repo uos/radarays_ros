@@ -18,6 +18,9 @@
 #include <radarays_ros/radar_types.h>
 #include <radarays_ros/radar_algorithms.h>
 
+
+#include <radarays_ros/wave_shaders.h>
+
 using namespace radarays_ros;
 
 namespace rm = rmagine;
@@ -355,6 +358,44 @@ void shootRay()
 
 int main(int argc, char** argv)
 {
+
+    // DirectedWave incidence;
+    // incidence.ray.dir = {0.5, 0.0, -0.5};
+    // incidence.ray.dir.normalizeInplace();
+    // incidence.energy = 1.0;
+    
+    // SurfacePatch surface;
+    // surface.normal = {0.0, 0.0, 1.0};
+    // surface.n1 = 1.0; // air
+    // surface.n2 = 1.33; // water
+    // surface.reflection_parameters.resize(3);
+    // surface.reflection_parameters[0] = 0.5; // diffuse
+    // surface.reflection_parameters[1] = 0.5;
+    // surface.reflection_parameters[2] = 100.5;
+
+    // std::cout << "Incidence: " << incidence.ray.dir << std::endl;
+
+    // int n_angles = 100;
+
+    // float angle_inc = M_PI / static_cast<float>(n_angles);
+    // for(size_t i=0; i<n_angles; i++)
+    // {
+    //     float angle = angle_inc * (float)i;
+    //     rm::EulerAngles e{0.0, -angle, 0.0};
+
+    //     rm::Quaternion q = e;
+
+    //     rm::Vector v = {1.0, 0.0, 0.0};
+    //     rm::Vector out_direction = q * v;
+
+    //     float res = blinn_phong_brdf(incidence, surface, out_direction);
+    //     std::cout << out_direction << " -> " << res << std::endl;
+    // }
+    
+
+
+    // return 0;
+
     ros::init(argc, argv, "ray_reflection_test");
 
     ros::NodeHandle nh;

@@ -2,15 +2,26 @@
 <launch>
 
 <arg name="bagfile" default="/home/amock/datasets/VolvoCE/Volvo_CE.bag" />
-<arg name="rate" default="2.0" />
+<arg name="rate" default="1.0" />
 <arg name="gui" default="false" />
 
 <node pkg="rosbag" type="play" name="rosbag" args="$(arg bagfile) -r $(arg rate) --pause" output="screen" />
 
+<node pkg="radar_tools" type="image_slicer" name="image_slicer_navtech" output="screen">
+    <remap from="image_in" to="/Navtech/Polar" />
+    <remap from="image_out" to="/radar/image" />
+</node>
+
+<!-- Params for image slicer -->
+<node name="dynamic_reconfigure_load" pkg="dynamic_reconfigure" type="dynparam" 
+        args="load /image_slicer_navtech $(find radarays_ros)/cfg/volvo_ce_slicer.yaml" />
+
 <node pkg="radar_tools" type="radar_img_to_pcl" name="radar_img_to_pcl" output="screen">
     <param name="frame" type="string" value="navtech" />
-    <remap from="radar_image" to="/Navtech/Polar" />
+    <remap from="radar_image" to="/radar/image" />
     <rosparam command="load" param="radar" file="$(find radarays_ros)/config/navtech_volvo_ce.yaml" />
 </node>
+
+<node pkg="tf2_ros" type="static_transform_publisher" name="navtech_to_map" args="2.5 -7.5 3.0 0 0 -0.9998477 -0.0174524 map navtech" />
 
 </launch>

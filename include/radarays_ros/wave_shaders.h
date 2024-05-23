@@ -150,19 +150,30 @@ float lambertian_brdf(
 
 //-------------------------------------------------------------------------//
 // Cook torrance BRDF
+// http://www.codinglabs.net/article_physically_based_rendering_cook_torrance.aspx
 float cook_torrance_brdf(
-    const DirectedWave& incidence, 
+    const DirectedWave& incidence,
     const rm::Vector& normal,
     const Material* material,
     const rm::Vector3& out_direction)
 {
-    float k_L = material->brdf_params[0]; // diffuse amount
-    float k_g = 1.0 - k_L; // specular amount
+    // // black plastic dice
+    // roughness = 0.1;
+    // k_L = 0.7;
+	// k_g = 0.3;
+	// rho = 0.02;
+	// k_s = 1.0; compute_fzero(incidence.material, material)
+
+    float k_L = material->brdf_params[0]; // diffuse amount (k_d * c)
+    float k_s = 1 - k_L; // specular amount
     float roughness = material->brdf_params[1]; // roughness
+
+    // float r_d = 1.0;
+
     // TODO: check how to determine k_s
     // float k_s = surface.reflection_parameters[2] // non-metallic-ness - TODO: is this right?
     // or from actual surface
-    float k_s = compute_fzero(incidence.material, material);
+    float F0 = compute_fzero(incidence.material, material);
 
     const rm::Vector half = (-incidence.ray.dir + out_direction).normalize();
 
@@ -171,15 +182,13 @@ float cook_torrance_brdf(
 	const float n_dot_i = max(0.f, normal.dot(-incidence.ray.dir));
 	const float o_dot_h = max(0.f, out_direction.dot(half));
 
-    float F = fresnel_reflection_coefficient(half, incidence.ray.dir, k_s);
+    float F = fresnel_reflection_coefficient(half, incidence.ray.dir, F0);
     float D = Dfunc( roughness, n_dot_h );
-    float G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i );
+    float G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i);
+    // or f_cook_toorance
+    float r_s = (F*G*D) / (4*n_dot_i*n_dot_o);
 
-    float r_s = (F*G*D) / ( 4*n_dot_i*n_dot_o );
-
-    float result =
-		k_L * incidence.energy / M_PI +
-		k_g * incidence.energy * r_s;
+    float result = k_L / M_PI + k_s * r_s;
 
     return result;
 }

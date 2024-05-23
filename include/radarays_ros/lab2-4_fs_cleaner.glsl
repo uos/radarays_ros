@@ -85,13 +85,20 @@ vec3 cook_torrance_brdf( vec3 in_direction, vec3 out_direction, vec3 normal )
 	//{0.8, 0.8, 0.5};
 	//{0.955,0.638,0.538}; // copper, according to Table 9.2
 		{1, 0.782, 0.344}; // gold, according to Table 9.2
-		
+	// tab 9.2 -> F0 values
+	// why is rho == F0, and F0
+
+
+	
 	float k_g = 1 - k_L;
 	vec3 k_s =
 		//{1, 1, 1};  // pure white "specular" term = non-metallic
 		//vec3(0.04); // stone/plastic, according to Table 9.2
-		rho;          // same as diffuse colour = metallic
+		{1, 0.782, 0.344};          // same as diffuse colour = metallic
+	
 	float roughness = .3; 
+
+	// specular term
 
 	// // black plastic dice
 	// roughness = .1;
@@ -121,11 +128,10 @@ vec3 cook_torrance_brdf( vec3 in_direction, vec3 out_direction, vec3 normal )
 	
 	result =
 		k_L*rho/M_PI +
-		k_g*1* ( (F*G*D) / ( 4*n_dot_i*n_dot_o ) );
+		k_g*1*( (F*G*D) / ( 4*n_dot_i*n_dot_o ) );
 
 	result = clamp(result,0.0,1.0);
 	return result;
- 
 }
 
 

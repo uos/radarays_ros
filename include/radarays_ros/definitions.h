@@ -3,15 +3,40 @@
 
 // but all definitions and macros here
 #include <memory>
+#include <functional>
 
+#include <rmagine/math/types.h>
 
+namespace rm = rmagine;
 
 namespace radarays_ros
 {
 
+struct Ray;
+struct Signal;
 struct DirectedWave;
-struct Intersection;
+struct DirectedWaveAttributes;
+struct AmbientNoiseParams;
 struct Material;
+struct Intersection;
+
+struct Sender;
+struct Receiver;
+
+
+using BRDFFunc = std::function<float( // returns reflectance value
+            const DirectedWave&, // incident wave
+            const rm::Vector3&, // surface normal
+            const Material*, // surface material
+            const rm::Vector3& // out_direction
+            )>;
+
+using WaveGenFunc = std::function<std::vector<DirectedWave>()>;
+
+
+using ReceiverFunc = std::function<float(
+            const rm::Vector& // incoming 
+            )>;
 
 using MaterialPtr = std::shared_ptr<Material>;
 

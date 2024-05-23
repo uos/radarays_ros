@@ -162,6 +162,24 @@ inline float cauchy_estimate_n(
 }
 
 
+// transformations
+Ray operator*(const rm::Transform& T, const Ray& ray);
+
+DirectedWave operator*(const rm::Transform& T, const DirectedWave& wave);
+
+std::vector<DirectedWave> operator*(const rm::Transform& T, const std::vector<DirectedWave>& wave);
+
+
+// if both in and out dir are on the same side of the plane
+inline bool are_same_medium(
+    const rm::Vector& in_dir, 
+    const rm::Vector& normal, 
+    const rm::Vector& out_dir)
+{
+    return in_dir.dot(normal) * out_dir.dot(normal) >= 0.0;
+}
+
+
 } // namespace radarays_ros
 
 #endif // RADARAYS_ROS_RADAR_MATH_H

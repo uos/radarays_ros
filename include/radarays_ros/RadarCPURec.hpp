@@ -10,14 +10,13 @@
 #include <vector>
 #include <rmagine/math/types.h>
 
+#include <radarays_ros/definitions.h>
 #include <radarays_ros/wave_shaders.h>
 
 
 namespace radarays_ros
 {
 
-
-using WaveGenFunc = std::function<std::vector<DirectedWave>()>;
 
 /**
  * Simulating radar measurements using a recursive strategy of approximating the rendering equation
@@ -37,18 +36,27 @@ public:
     );
 
     // function that is generating 
-    void setWaveGenFunc(WaveGenFunc wave_gen_func);
+    void setSampleFunc(WaveGenFunc wave_gen_func);
+
+    bool isFreeInBetween(const rm::Vector& p1, const rm::Vector& p2, float t1_offset = 0.001) const;
 
     std::optional<Intersection> intersect(DirectedWave& wave) const;
 
+    // void sample(rm::Vector direction, const Sender& sender, std::vector<float>& range_returns, int tree_depth = 3) const;
+
+    float renderSingleWave(const DirectedWave& wave, const Sender& sender, std::vector<float>& range_returns, int tree_depth = 3) const;
+    
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
+
+
+
 
 protected:
 
     rm::EmbreeMapPtr m_map;
     std::vector<Material> m_materials;
 
-    WaveGenFunc m_wave_generator;
+    WaveGenFunc m_wave_generator; // used for all azimuth angles
 };
 
 } // namespace radarays_ros

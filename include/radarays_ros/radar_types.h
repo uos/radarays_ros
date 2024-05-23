@@ -26,6 +26,8 @@ struct Ray
     }
 };
 
+
+
 struct Signal
 {
     double time;
@@ -77,8 +79,6 @@ struct DirectedWave
     // 0.5: unpolarized
     double polarization;
 
-    
-
     // frequency of wave (GHz) (unchanged during propagation)
     double frequency;
     
@@ -115,6 +115,11 @@ struct DirectedWave
     DirectedWave& moveInplace(double distance);
 
     DirectedWave move(double distance) const;
+
+    inline double getDistanceAir() const
+    {
+        return time * M_C_IN_M_PER_NANOSECOND;
+    }
 };
 
 struct AmbientNoiseParams
@@ -127,14 +132,6 @@ struct AmbientNoiseParams
     float resolution = 0.0595238;
 };
 
-
-
-using BRDF = std::function<float( // returns reflectance value
-            const DirectedWave&, // incident wave
-            const rm::Vector3&, // surface normal
-            const Material*, // surface material
-            const rm::Vector3& // out_direction
-            )>;
 
 
 // template for a BRDF function
@@ -160,12 +157,9 @@ struct Material
     // variable number of parameters used in brdf func
     std::vector<float> brdf_params;
     // user specific brdf function
-    BRDF brdf_func;
+    BRDFFunc brdf_func;
 
-    float brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const
-    {
-        return brdf_func(incidence, normal, this, out_direction);
-    }
+    float brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const;
 };
 
 struct Intersection
@@ -177,6 +171,60 @@ struct Intersection
 
     float brdf(const DirectedWave& incidence, 
         const rm::Vector3& out_direction) const;
+};
+
+
+// Sender in map coordinates
+struct Receiver
+{
+    // in map coordinates
+    rm::Transform Tsm;
+
+    // wave gen in sensor coordinates
+    WaveGenFunc sample_gen = []() -> std::vector<DirectedWave>{
+        DirectedWave wave;
+        wave.energy       =  1.0; //
+        wave.polarization =  0.5;
+        wave.frequency    = 76.5; // GHz
+        wave.time         =  0.0; // in ns
+        wave.ray.orig = {0.0, 0.0, 0.0};
+        wave.ray.dir = {1.0, 0.0, 0.0};
+        return {wave};
+    };
+
+    std::vector<DirectedWave> genSamples()
+    {
+        return sample_gen();
+    }
+
+    // generates rays ready to shoot in map coordinates
+    std::vector<DirectedWave> genSamplesMap()
+    {
+        return ~Tsm * genSamples();
+    }
+};
+
+/**
+ * From the receiver we raytrace to finde traces to the sender
+*/
+struct Sender
+{
+    // sensor -> map transform / pose in map coordinates
+    rm::Transform Tsm;
+    
+    // energy_density function
+    // wave: in sensor coordinates
+    ReceiverFunc energy_density_func = [](const rm::Vector dir) -> float {
+        
+        // const rm::Vector front = {1.0, 0.0, 0.0};
+        // return front.dot(dir);
+        return 1.0;
+    };
+
+    float getEnergyDensity(const rm::Vector& dir) const {
+        // transform wave to sensor coordinates and compute fraction of return energy
+        return energy_density_func(~Tsm.R * dir);
+    }
 };
 
 

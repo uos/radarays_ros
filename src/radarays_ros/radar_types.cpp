@@ -24,6 +24,11 @@ DirectedWave DirectedWave::move(double distance) const
     return wave;
 }
 
+float Material::brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const
+{
+    return brdf_func(incidence, normal, this, out_direction);
+}
+
 float Intersection::brdf(const DirectedWave& incidence, 
     const rm::Vector3& out_direction) const
 {

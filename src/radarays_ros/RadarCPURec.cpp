@@ -31,7 +31,6 @@ RadarCPURec::RadarCPURec(
 {
     // load all materials
 
-
     // lets load some dummy materials.
     // later they are defined somewhere in the parameters / model
 
@@ -40,6 +39,7 @@ RadarCPURec::RadarCPURec(
     material_air.brdf_func = lambertian_brdf;
     material_air.brdf_params.resize(0); // lambertian doesnt need parameters to be set
     material_air.n = 1.0;
+    material_air.transmittance = 1.0;
     m_materials.push_back(material_air);
 
 
@@ -51,23 +51,62 @@ RadarCPURec::RadarCPURec(
     material1.brdf_params[1] = 0.5; // glossy amount
     material1.brdf_params[2] = 0.3; // specular amount
     material1.n = 100.0;
+    material1.transmittance = 0.0;
     m_materials.push_back(material1);
 
     // TODO: what is this material
     Material material2;
     material2.brdf_func = cook_torrance_brdf;
-    material2.brdf_params.resize(2); // cook_torrance_brdf needs 2 parameters
+    material2.brdf_params.resize(4); // cook_torrance_brdf needs 2 parameters
     material2.brdf_params[0] = 0.2; // diffuse amount
     material2.brdf_params[1] = 0.5; // roughness
     material2.n = 100.0;
-    m_materials.push_back(material1);
+    material2.transmittance = 0.5;
+    m_materials.push_back(material2);
+
+    // Water?
+    Material material3;
+    material3.brdf_func = cook_torrance_brdf;
+    material3.brdf_params.resize(2); // cook_torrance_brdf needs 2 parameters
+    material3.brdf_params[0] = 0.2; // diffuse amount
+    material3.brdf_params[1] = 0.0; // roughness
+    material3.n = 1.333;
+    material3.transmittance = 1.0;
+    m_materials.push_back(material3);
 }
 
-void RadarCPURec::setWaveGenFunc(WaveGenFunc wave_gen_func)
+void RadarCPURec::setSampleFunc(WaveGenFunc wave_gen_func)
 {
     m_wave_generator = wave_gen_func;
 }
 
+bool RadarCPURec::isFreeInBetween(
+    const rm::Vector& p1,
+    const rm::Vector& p2,
+    float t1_offset) const
+{
+
+    rm::Vector dir = p2 - p1;
+    float max_distance = dir.l2norm();
+    dir.normalizeInplace();
+
+    struct RTCRayHit rayhit;
+    rayhit.ray.org_x = p1.x;
+    rayhit.ray.org_y = p1.y;
+    rayhit.ray.org_z = p1.z;
+    rayhit.ray.dir_x = dir.x;
+    rayhit.ray.dir_y = dir.y;
+    rayhit.ray.dir_z = dir.z;
+    rayhit.ray.tnear = t1_offset;
+    rayhit.ray.tfar = max_distance;
+    rayhit.ray.mask = -1;
+    rayhit.ray.flags = 0;
+    rayhit.hit.geomID = RTC_INVALID_GEOMETRY_ID;
+    rayhit.hit.instID[0] = RTC_INVALID_GEOMETRY_ID;
+    rtcIntersect1(m_map->scene->handle(), &rayhit);
+
+    return rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID; // miss -> empty
+}
 
 std::optional<Intersection> RadarCPURec::intersect(DirectedWave& wave) const
 {
@@ -78,7 +117,7 @@ std::optional<Intersection> RadarCPURec::intersect(DirectedWave& wave) const
     rayhit.ray.dir_x = wave.ray.dir.x;
     rayhit.ray.dir_y = wave.ray.dir.y;
     rayhit.ray.dir_z = wave.ray.dir.z;
-    rayhit.ray.tnear = 0;
+    rayhit.ray.tnear = 0.001; // try to prevent hits if origin is located directly on a face
     rayhit.ray.tfar = std::numeric_limits<float>::infinity();
     rayhit.ray.mask = -1;
     rayhit.ray.flags = 0;
@@ -139,6 +178,113 @@ std::optional<Intersection> RadarCPURec::intersect(DirectedWave& wave) const
 //    imagine you have light and black material:
 //       - set refractive index equal to air -> nothing is reflected, everything goes into the material
 //       - set absorption to 1.0 -> everything of the energy is absorpt (transformed into heat)
+
+
+
+// from receiver incoming signals along certain direction
+// the returning wave is filled with
+float RadarCPURec::renderSingleWave(
+    const DirectedWave& wave,
+    const Sender& sender,
+    std::vector<float>& range_returns,
+    int tree_depth) const
+{
+    // propagate wave
+
+    // TODO: implement
+    // 1. find intersection with scene
+    // 2. send ray from intersection to sender
+    // 3. if tree_depth > 0: scatter for reflection and transmission
+    DirectedWave incidence = wave;
+    auto hit = intersect(incidence);
+
+    if(hit)
+    {   
+        auto intersection = *hit;
+        // we dont allow emitting materials -> Le 0
+        // thus Lo = Le + Lr -> Lo = Lr
+        // compute the total reflectance
+        
+
+        // collect signal strenghts at certain distance
+        float Lo = 0.0;
+        size_t n_samples = 0;
+
+        // if trace is not blocked by any object compute energy add signal to range_returns
+        if(isFreeInBetween(incidence.ray.orig, sender.Tsm.t))
+        { 
+            // intersection is visible by the sender
+            rm::Vector dir_to_sender = (sender.Tsm.t - incidence.ray.orig);
+            float distance_to_sender = dir_to_sender.l2norm();
+            dir_to_sender.normalizeInplace();
+            float Li = sender.getEnergyDensity(-dir_to_sender); // incoming radiance part
+
+            if(are_same_medium(-incidence.ray.dir, intersection.normal, dir_to_sender))
+            {   
+                float nwi = intersection.normal.dot(-incidence.ray.dir);
+                float fr = intersection.brdf(incidence, dir_to_sender);
+                float Lr0 = fr * Li * nwi; // reflection part that comes directly from the sender
+
+                n_samples++;
+                Lo += Lr0;
+            } else {
+                // what if the sender is in the transmitted material?
+            }
+        } else {
+            // occluded: can this be part valuable?
+        }
+
+        float current_distance = incidence.getDistanceAir();
+        int current_cell = static_cast<int>(current_distance / m_cfg.resolution);
+
+        // compute the rest of the energy
+        if(tree_depth > 0)
+        {
+            // collect L1 - Ln from next rays
+
+            // TODO: compute these numbers based on refractive indices
+            size_t n_reflections = 10;
+            size_t n_transmissions = 2;
+
+            for(size_t i=0; i<n_reflections; i++)
+            {
+                DirectedWave reflection_sample = incidence;
+                // recursion
+                // compute incoming radiance
+                const float Li = renderSingleWave(reflection_sample, sender, range_returns, tree_depth - 1);
+                float fr = intersection.brdf(incidence, reflection_sample.ray.dir);
+                float nwi = intersection.normal.dot(-incidence.ray.dir);
+                // compute reflected radiance
+                float Lri = fr * Li * nwi;
+                
+                // add reflected radiance to total reflected power
+                Lo += Lri;
+                n_samples++; // for later normalization? 
+            }
+
+            for(size_t i=0; i<n_transmissions; i++)
+            {
+                // TODO
+                DirectedWave transmission_sample = incidence;
+                const float Li = renderSingleWave(transmission_sample, sender, range_returns, tree_depth - 1);
+
+                Lo += Li;
+                n_samples++;
+            }
+        }
+
+        Lo = Lo / static_cast<float>(n_samples);
+
+        float distance = incidence.getDistanceAir();
+
+        return Lo;
+    } else {
+        // miss: do nothing?
+    }
+
+    return 0.0;
+}
+
 sensor_msgs::ImagePtr RadarCPURec::simulate(
     ros::Time stamp)
 {
@@ -155,22 +301,41 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
         std::cout << "[RadarCPURec] Resizing canvas - done." << std::endl;
     }
 
-    // a buffer to store the returned energy per distance (cell)
-    std::vector<float> returned_energy(m_cfg.n_cells, 0.0);
+    updateTsm();
 
-    DirectedWave wave;
-    wave.energy       =  1.0;
-    wave.polarization =  0.5;
-    wave.frequency    = 76.5; // GHz
-    wave.velocity     =  0.3; // m / ns - speed in air
-    wave.material_id  =  0;   // 0: air
-    wave.time         =  0.0; // in ns
-    wave.ray.orig = {0.0, 0.0, 0.0};
-    wave.ray.dir = {1.0, 0.0, 0.0};
+    // a buffer to store the returned energy per distance (cell)
+    std::vector<float> range_returns(m_cfg.n_cells, 0.0);
+
+
+    Sender sender;
+    sender.Tsm = rm::Transform::Identity(); // TODO: put actual sensor pose here
+
+    Receiver receiver;
+    receiver.Tsm = sender.Tsm; // place receive at same point as sender
+
+    for(auto wave : receiver.genSamplesMap())
+    {
+        renderSingleWave(wave, sender, range_returns, 3);
+    }
+
+
+    // DirectedWave wave;
+    // wave.energy       =  1.0;
+    // wave.polarization =  0.5;
+    // wave.frequency    = 76.5; // GHz
+    // // wave.velocity     =  0.3; // m / ns - speed in air
+    // // wave.material_id  =  0;   // 0: air
+    // wave.material = &m_materials[0];
+    // wave.time         =  0.0; // in ns
+    // wave.ray.orig = {0.0, 0.0, 0.0};
+    // wave.ray.dir = {1.0, 0.0, 0.0};
+    // std::cout << "Wave speed: " << wave.getVelocity() << " m/ns" << std::endl;
 
     int n_cells = m_polar_image.rows;
     int n_angles = m_polar_image.cols;
 
+    
+    // prepare output
     msg = cv_bridge::CvImage(
                 std_msgs::Header(), 
                 "mono8",

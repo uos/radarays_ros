@@ -2,6 +2,7 @@
 #define RADARAYS_ROS_RADAR_TYPES_H
 
 #include <functional>
+#include <vector>
 #include <rmagine/math/types.h>
 #include "radar_math.h"
 #include "definitions.h"
@@ -96,7 +97,9 @@ struct DirectedWave
     // current medium (is this redundant with velocity?)
     unsigned int material_id;
 
+
     double getVelocity() const;
+    double getRefractiveIndex() const;
 
     // l = v / f
     double getWaveLength() const;
@@ -115,6 +118,8 @@ struct DirectedWave
     DirectedWave& moveInplace(double distance);
 
     DirectedWave move(double distance) const;
+
+    
 
     inline double getDistanceAir() const
     {
@@ -153,7 +158,8 @@ struct Material
     // see if the energy falls below a value. If yes, finish; if no, continue
     // special case: if absorption is equal to 1, it is clear that everything is absorpt. We can stop without doing the first intersection test
     double transmittance;
-    
+
+
     // variable number of parameters used in brdf func
     std::vector<float> brdf_params;
     // user specific brdf function
@@ -171,6 +177,10 @@ struct Intersection
 
     float brdf(const DirectedWave& incidence, 
         const rm::Vector3& out_direction) const;
+
+    // get "mode" wave of reflection and transmission(refraction) 
+    // according to snell's law and fresnel's equation
+    std::pair<DirectedWave, DirectedWave> fresnel(const DirectedWave& wave_in) const;
 };
 
 

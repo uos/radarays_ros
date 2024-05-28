@@ -145,7 +145,8 @@ float lambertian_brdf(
     const Material* material,
     const rm::Vector3& out_direction)
 {
-    return incidence.energy / M_PI; // why devided by pi?
+    float k_L = material->brdf_params[0];
+    return k_L / M_PI; // why devided by pi?
 }
 
 //-------------------------------------------------------------------------//

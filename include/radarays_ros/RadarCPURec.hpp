@@ -42,15 +42,9 @@ public:
 
     std::optional<Intersection> intersect(DirectedWave& wave) const;
 
-    // void sample(rm::Vector direction, const Sender& sender, std::vector<float>& range_returns, int tree_depth = 3) const;
-
     float renderSingleWave(const DirectedWave& wave, const Sender& sender, std::vector<float>& range_returns, int tree_depth = 3) const;
     
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
-
-
-
-
 protected:
 
     rm::EmbreeMapPtr m_map;

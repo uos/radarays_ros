@@ -49,7 +49,6 @@ struct DirectedWaveAttributes
     double velocity;
     // frequency of wave (GHz)
     double frequency;
-    
     // time of travelling [ns?]
     double time;
 
@@ -167,6 +166,8 @@ struct Material
 
     float brdf(const DirectedWave& incidence, const rm::Vector& normal, const rm::Vector3& out_direction) const;
 };
+
+
 
 struct Intersection
 {

@@ -393,6 +393,11 @@ rm::Memory<rm::Vector> sample_cone(
     int sample_dist,
     float p_in_cone);
 
+
+std::vector<rm::Vector3> fibonacci_sphere(
+    const size_t& n_samples);
+
+
 // std::vector<std::vector<DirectedWave> > sample_cones(
 //     const std::vector<DirectedWave>& wave_means, 
 //     float width,

@@ -18,7 +18,8 @@ DirectedWave& DirectedWave::moveInplace(double distance)
 {
     ray.orig = ray.orig + ray.dir * distance;
     time += distance / getVelocity();
-    energy *= (1.0 - pow(material->transmittance, distance));
+    const double energy_loss = pow(material->transmittance, distance);
+    energy *= energy_loss;
     return *this;
 }
 
@@ -69,7 +70,14 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
 
 
     assert(i_dot_n >= 0.0);
-    assert(i_dot_n <= 1.0);
+    if(i_dot_n > 1.00001)
+    {
+        std::cout << "i: " << incidence.ray.dir.x << ", " << incidence.ray.dir.y << ", " << incidence.ray.dir.z << std::endl;
+        std::cout << "n: " << normal.x << ", " << normal.y << ", " << normal.z << std::endl;
+        std::cout << "i_dot_n: " << i_dot_n << std::endl;
+    }
+    assert(i_dot_n <= 1.00001);
+
 
     // std::cout << "i_dot_n: " << i_dot_n << std::endl;
 

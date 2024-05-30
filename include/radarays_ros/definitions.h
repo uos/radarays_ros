@@ -33,6 +33,12 @@ using BRDFFunc = std::function<float( // returns reflectance value
 
 using WaveGenFunc = std::function<std::vector<DirectedWave>()>;
 
+using SamplingFunc = std::function<rm::Vector(
+    const DirectedWave&, // incident wave
+    const rm::Vector3&, // surface normal
+    const Material*, // surface material
+    const rm::Vector3& // out_direction
+)>;
 
 using ReceiverFunc = std::function<float(
             const rm::Vector& // incoming 

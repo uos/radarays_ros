@@ -42,7 +42,15 @@ public:
 
     std::optional<Intersection> intersect(DirectedWave& wave) const;
 
-    float renderSingleWave(const DirectedWave& wave, const Sender& sender, std::vector<float>& range_returns, int tree_depth = 3) const;
+    float renderSingleWave(
+        const DirectedWave& wave, 
+        const Sender& sender, 
+        std::vector<float>& range_returns, 
+        std::vector<int>& range_counts,
+        int tree_depth = 3) const;
+
+    std::vector<float> energy_to_decibel(float sent_energy, const std::vector<float>& range_returns, const std::vector<int>& range_counts) const;
+    std::vector<float> blur(const std::vector<float>& energy) const;
     
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
 protected:
@@ -51,6 +59,8 @@ protected:
     std::vector<Material> m_materials;
 
     WaveGenFunc m_wave_generator; // used for all azimuth angles
+
+    ros::Publisher m_data_pub;
 };
 
 } // namespace radarays_ros

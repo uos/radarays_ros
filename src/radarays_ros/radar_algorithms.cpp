@@ -384,4 +384,58 @@ std::vector<DirectedWave> sample_cone(
     return waves;
 }
 
+std::vector<float> blur(const std::vector<float>& energies)
+{
+    std::vector<float> ret(energies.size(), 0.0);
+
+    std::vector<float> kernel = {0.2, 0.5, 0.3, 0.1};
+    int mode = 1; // which elemet is the mode (usually somewhere in the middle)
+
+    for(int i=0; i<energies.size(); i++)
+    {
+        int tgt_id = i;
+        for(int j=0; j<kernel.size(); j++)
+        {
+            int src_id = i + j - mode;
+            int knl_id = j;
+            if(src_id > 0 && src_id < ret.size())
+            {
+                ret[tgt_id] += kernel[knl_id] * energies[src_id];
+            }
+        }
+    }
+
+    return ret;
+}
+
+std::vector<float> blur_kalman(
+    const std::vector<float>& energies, 
+    const std::vector<int>& counts,
+    float process_noise)
+{
+    std::vector<float> ret(energies.size(), 0.0);
+
+    float energy = energies[0];
+    float energy_sigma = 1000.0;
+
+    for(int i=0; i<energies.size(); i++)
+    {
+        // predict
+        float energy_ = energy;
+        float energy_sigma_ = energy_sigma + process_noise;
+
+        // correct
+        float meas = energies[i];
+        float meas_sigma = 1.0 / (static_cast<float>(counts[i] + 1));
+
+        float K = energy_sigma_ / (energy_sigma_ + meas_sigma);
+
+        energy = energy_ + K * (meas - energy_);
+        energy_sigma = (1.0 - K) * energy_sigma_;
+        ret[i] = energy;
+    }
+
+    return ret;
+}
+
 } // namespace radarays_ros

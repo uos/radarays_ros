@@ -16,6 +16,16 @@ find_package(catkin REQUIRED COMPONENTS
     actionlib_msgs
 )
 
+#######################
+## OpenMP: Threading ##
+#######################
+find_package(OpenMP REQUIRED)
+if(OPENMP_FOUND)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif(OPENMP_FOUND)
+
 generate_dynamic_reconfigure_options(
   cfg/RadarModel.cfg
   cfg/RayReflection.cfg
@@ -26,7 +36,7 @@ include_directories(
     ${catkin_INCLUDE_DIRS}
 )
 
-find_package(rmagine 2.2.1...
+find_package(rmagine 2.2.1
 COMPONENTS
     core
 OPTIONAL_COMPONENTS
@@ -34,6 +44,8 @@ OPTIONAL_COMPONENTS
     cuda
     optix
 )
+
+
 
 include_directories(${rmagine_INCLUDE_DIRS})
 

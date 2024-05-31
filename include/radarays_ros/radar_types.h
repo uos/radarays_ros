@@ -141,6 +141,8 @@ struct AmbientNoiseParams
 // template for a BRDF function
 struct Material
 {
+    std::string name;
+    
     // refractive index of material
     // can be computed by n = c/v
     // set to a really high value to

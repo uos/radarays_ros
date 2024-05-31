@@ -24,10 +24,7 @@ namespace radarays_ros
 // }
 
 
-// hemisphere is pointing in positive x-direction
-// see: https://www.mathematik.uni-marburg.de/~thormae/lectures/graphics1/code/ImportanceSampling/index.html
-// "Uniform sampling of a hemisphere"
-inline rm::Vector sample_hemisphere_uniform()
+inline rm::Vector sample_hemisphere_uniform_optical()
 {
     std::random_device rd; // obtain a random number from hardware
     std::mt19937 gen(rd()); // seed the generator
@@ -38,7 +35,7 @@ inline rm::Vector sample_hemisphere_uniform()
 
     // PHI: vertical, y-rot, pitch, polar angle, height
     // range [-PI/2, PI/2)
-    float phi = 2.0 * M_PI * u;
+    float phi   = 2.0 * M_PI * u;
     float theta = acos(1.0 - v);
 
     // the resulting vector has never x value < 0
@@ -47,16 +44,45 @@ inline rm::Vector sample_hemisphere_uniform()
         sinf(phi) * sinf(theta), 
         cosf(theta)};
 
+    // TODO: figure out what the limits are
+    assert(sample_optical.z >= 0.0);
+    return sample_optical;
+}
+
+// hemisphere is pointing in positive x-direction
+// see: https://www.mathematik.uni-marburg.de/~thormae/lectures/graphics1/code/ImportanceSampling/index.html
+// "Uniform sampling of a hemisphere"
+inline rm::Vector sample_hemisphere_uniform()
+{
+    const rm::Vector sample_optical = sample_hemisphere_uniform_optical();
+
     const rm::Vector sample{
         sample_optical.z,
         -sample_optical.x,
         -sample_optical.y
     };
 
-    // TODO: figure out what the limits are
-    assert(sample.x >= 0.0);
     return sample;
 }
+
+inline rm::Vector sample_reflection(
+    const rm::Vector normal, 
+    const rm::Vector reflection_dir, 
+    float stddev)
+{
+    std::random_device rd; // obtain a random number from hardware
+    std::mt19937 gen(rd()); // seed the generator
+
+    std::normal_distribution<float> distr{0.0, stddev};
+
+    const float u = distr(gen);
+    const float v = distr(gen);
+
+    rm::Vector ret;
+
+    return ret;
+}
+
 
 // inline rm::Vector sample_hemisphere_cosine()
 // {

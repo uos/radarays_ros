@@ -12,49 +12,13 @@
 
 #include <algorithm>
 
-
-
-
 using std::max;
 using std::min;
 
-
 namespace rm = rmagine;
-
 
 namespace radarays_ros
 {
-
-struct SurfacePatch;
-
-
-
-// use this for convencience
-// 
-
-
-// // legacy code - deprectated
-// struct SurfacePatch
-// {
-//     // surface normal
-//     rm::Vector normal;
-
-//     // index of refraction for material of positive normal direction
-//     float n1;
-//     // index of refraction for material of negative normal direction
-//     float n2;
-
-//     std::vector<float> reflection_parameters;
-//     // reflection parameters dependend on used type of BRDF
-//     // Blinn-Phong
-//     // - 0: k_L = diffuse amount [0,1]
-//     // - 1: k_g = glossy amount [0,1]
-//     // - 2: s = specular amount (exponent) [0,inf]
-//     // Cook-Torrance
-//     // - 0: k_L = diffuse amount in [0,1]
-//     // - 1: roughness in [0,1]
-// };
-
 
 float compute_fzero(const Material* m1, const Material* m2)
 {
@@ -79,15 +43,6 @@ float fresnel_reflection_coefficient(
     return fresnel_reflection_coefficient(half.dot(-in_direction), F0);
 }
 
-// float fresnel_reflection_coefficient(
-//     rm::Vector3 in_direction, 
-//     Intersection intersection, 
-//     rm::Vector out_direction)
-// {
-//     rm::Vector3 half = (-in_direction + out_direction).normalize(); // half-vector
-//     const float F0 = compute_fzero(intersection);
-//     return fresnel_reflection_coefficient(half, in_direction, F0);
-// }
 
 //-------------------------------------------------------------------------//
 // Cook-Torrance and related microfacet BRDFs
@@ -115,7 +70,6 @@ float Dfunc( float roughness, float n_dot_h )
 	return D;
 }
 
-
 float Dfunc_GGX( float roughness, float n_dot_h )
 {
 	// This is the GGX distribution function (eq 9.41) from Real-Time Rendering 4
@@ -136,6 +90,29 @@ float Gfunc( float n_dot_h, float o_dot_h,
 	return G;
 }
 
+///
+// RadaRays BRDF
+// similar to phong
+float radarays_brdf(
+    const DirectedWave& incidence, 
+    const rm::Vector& normal,
+    const Material* material,
+    const rm::Vector3& out_direction)
+{
+    const float A = material->brdf_params[0];
+    const float B = material->brdf_params[1];
+    const float C = material->brdf_params[2];
+
+    const float i_dot_n = incidence.ray.dir.dot(-normal);
+    const float i_dot_o = incidence.ray.dir.dot(-out_direction);
+    const float o_dot_n = out_direction.dot(normal);
+
+    const float dist_from_perfect_reflection = fabs(i_dot_n - o_dot_n);
+
+    const float S = 1.0 - A - B;
+    const float Iret = A + B * cos(dist_from_perfect_reflection) + S * pow(cos(dist_from_perfect_reflection), C);
+    return Iret; // why devided by pi?
+}
 
 //-------------------------------------------------------------------------//
 // Lambertian BRDF
@@ -183,13 +160,13 @@ float cook_torrance_brdf(
 	const float n_dot_i = max(0.f, normal.dot(-incidence.ray.dir));
 	const float o_dot_h = max(0.f, out_direction.dot(half));
 
-    float F = fresnel_reflection_coefficient(half, incidence.ray.dir, F0);
-    float D = Dfunc( roughness, n_dot_h );
-    float G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i);
+    const float F = fresnel_reflection_coefficient(half, incidence.ray.dir, F0);
+    const float D = Dfunc( roughness, n_dot_h );
+    const float G = Gfunc( n_dot_h, o_dot_h, n_dot_o, n_dot_i);
     // or f_cook_toorance
-    float r_s = (F*G*D) / (4*n_dot_i*n_dot_o);
+    const float r_s = (F*G*D) / (4*n_dot_i*n_dot_o);
 
-    float result = k_L / M_PI + k_s * r_s;
+    const float result = k_L / M_PI + k_s * r_s;
 
     return result;
 }
@@ -202,24 +179,15 @@ float blinn_phong_brdf(
     const Material* material,
     const rm::Vector3& out_direction)
 {
-    float k_L = material->brdf_params[0]; // diffuse amount
-	float k_g = material->brdf_params[1]; // glossy amount
-	float s   = material->brdf_params[2]; // specular exponent
+    const float k_L = material->brdf_params[0]; // diffuse amount
+	const float k_g = material->brdf_params[1]; // glossy amount
+	const float s   = material->brdf_params[2]; // specular exponent (shininess)
 	rm::Vector3 w_h = (-incidence.ray.dir + out_direction).normalize();
-    float k_s = ((8.0 + s) / 8.0) * pow( max(0.f, normal.dot(w_h)), s); // specular amount
-
-    float result;
-
-    // { // use only the reflection part of the energy?
-    //     float reflected_energy_part = fresnel_reflection_coefficient(incidence.ray.dir, surface, out_direction);
-    //     float reflected_energy = incidence.energy * reflected_energy_part;
-    //     result = k_L * reflected_energy + (k_g * k_s) * reflected_energy;
-    // }
+    const float n_dot_h = max(0.f, normal.dot(w_h));
     
-    { // or use the whole "input energy"?
-        result = k_L * incidence.energy + (k_g * k_s) * incidence.energy;
-    }
-
+    const float kEnergyConservation = ( 8.0 + s ) / ( 8.0 ); 
+    const float k_s = kEnergyConservation * pow(n_dot_h, s); // specular amount
+    float result = k_L + k_g * k_s;
     return result / M_PI;
 }
 

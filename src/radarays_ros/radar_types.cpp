@@ -1,5 +1,6 @@
 #include "radarays_ros/radar_types.h"
 #include <cassert>
+#include <algorithm>
 
 namespace radarays_ros
 {
@@ -66,19 +67,20 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
     reflection.ray.dir = incidence.ray.dir + normal_oriented * 2.0 * (-normal_oriented).dot(incidence.ray.dir);
 
     // is this correct?
-    const double i_dot_n = (-incidence.ray.dir).dot(normal);
+    double i_dot_n = (-incidence.ray.dir).dot(normal);
 
 
     assert(i_dot_n >= 0.0);
-    if(i_dot_n > 1.00001)
-    {
-        std::cout << "i: " << incidence.ray.dir.x << ", " << incidence.ray.dir.y << ", " << incidence.ray.dir.z << std::endl;
-        std::cout << "n: " << normal.x << ", " << normal.y << ", " << normal.z << std::endl;
-        std::cout << "i_dot_n: " << i_dot_n << std::endl;
-    }
-    assert(i_dot_n <= 1.00001);
-
-
+    // if(i_dot_n > 1.0)
+    // {
+    //     std::cout << "WARNING: i_dot_n > 1: " << i_dot_n << std::endl;
+    //     std::cout << "- i: " << incidence.ray.dir.x << ", " << incidence.ray.dir.y << ", " << incidence.ray.dir.z << std::endl;
+    //     std::cout << "- n: " << normal.x << ", " << normal.y << ", " << normal.z << std::endl;
+    //     i_dot_n = 1.0;
+    // }
+    
+    i_dot_n = std::clamp(i_dot_n, 0.0, 1.0);
+    // assert(i_dot_n <= 1.00001);
     // std::cout << "i_dot_n: " << i_dot_n << std::endl;
 
 
@@ -101,9 +103,7 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
     if(incidence_angle <= angle_limit)
     {
         transmission.ray.dir = incidence.ray.dir * n12 + normal_oriented * (n12 * i_dot_n - sqrt(1 - n12*n12 * ( 1 - i_dot_n*i_dot_n ) ) );
-
         const double t_dot_n = transmission.ray.dir.dot(-normal_oriented);
-        // std::cout << "t_dot_n: " << t_dot_n << std::endl;
         
         // must point in different direction
         assert(t_dot_n >= 0.0);
@@ -112,12 +112,6 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
         {
             refraction_angle = acos(t_dot_n);
         }
-
-        // std::cout << "Incidence angle: " << incidence_angle << std::endl;
-        // std::cout << "- limit: " << angle_limit << std::endl;
-        // std::cout << "Reflection angle: " << incidence_angle << std::endl;
-        // std::cout << "Refraction angle: " << refraction_angle << std::endl;
-
 
         // compute energy parts
         double rs = 0.0;
@@ -141,19 +135,11 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
         double Rs = rs * rs;
         double Rp = rp * rp;
 
-        // std::cout << "Rs: " << Rs << std::endl;
-        // std::cout << "Rp: " << Rp << std::endl;
-        
         double Reff = incidence.polarization * Rs + (1.0 - incidence.polarization) * Rp;
-
-        // std::cout << "Reff: " << Reff << std::endl;
         
         double Ts   = 1.0 - Rs;
         double Tp   = 1.0 - Rp;
         double Teff = 1.0 - Reff;
-
-        // std::cout << "Teff: " << Teff << std::endl;
-        // std::cout << "Incidence energy: " << incidence.energy << std::endl;
 
         reflection.energy = Reff;
         transmission.energy = Teff;
@@ -162,33 +148,6 @@ std::pair<DirectedWave, DirectedWave> Intersection::fresnel(const DirectedWave& 
         reflection.energy = 1.0;
         transmission.energy = 0.0;
     }
-
-    // old:
-    // if(n1 > 0.0)
-    // {
-    //     const double n21 = n2 / n1;
-    //     double angle_limit = 100.0;
-    //     if(abs(n21) <= 1.0)
-    //     {
-    //         angle_limit = asin(n21);
-    //         // sin(angle_limit) = n2 / n1
-    //         // so:
-    //         // 1/sin(angle_limit) = n1 / n2
-    //     }
-
-    //     if(incidence_angle <= angle_limit)
-    //     {
-    //         if(n2 > 0.0)
-    //         {
-    //             const double n12 = n1 / n2;
-    //             transmission.ray.dir = incidence.ray.dir * n12 + normal_oriented * (n12 * i_dot_n - sqrt(1 - n12*n12 * ( 1 - i_dot_n*i_dot_n ) ) );
-    //         } else {
-    //             // what to do here?
-    //         }
-    //     }
-    // }
-
-    
 
     return {reflection, transmission};
 }

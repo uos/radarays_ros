@@ -398,16 +398,7 @@ std::vector<rm::Vector3> fibonacci_sphere(
     const size_t& n_samples);
 
 
-// std::vector<std::vector<DirectedWave> > sample_cones(
-//     const std::vector<DirectedWave>& wave_means, 
-//     float width,
-//     int n_samples,
-//     int sample_dist,
-//     float p_in_cone)
-// {
-//     std::vector<std::vector<DirectedWave> > ret;
-//     return ret;
-// }
+
 
 inline void normalize_inplace(std::vector<float>& data)
 {
@@ -433,8 +424,6 @@ inline std::vector<float> make_denoiser_triangular(
 
     float verschmierer_min = 0.0;
     float verschmierer_max = 1.0;
-
-
 
     for(size_t i=0; i<width; i++)
     {
@@ -499,6 +488,13 @@ inline std::vector<float> make_denoiser_maxwell_boltzmann(
     return verschmierer;
 }
 
+
+std::vector<float> blur(const std::vector<float>& energy);
+
+std::vector<float> blur_kalman(
+    const std::vector<float>& energy, 
+    const std::vector<int>& counts,
+    float process_noise = 1.0);
 
 
 } // namespace radarays_ros

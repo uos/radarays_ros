@@ -5,7 +5,7 @@
 
 
 
-
+#include <std_msgs/Float32MultiArray.h>
 
 
 #include <rmagine/util/prints.h>
@@ -52,10 +52,11 @@ std::shared_ptr<ros::NodeHandle> nh_p;
 std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
+ros::Publisher pub_signals;
 image_transport::Publisher pub_polar;
+image_transport::Publisher pub_polar_gt;
 
 RadarPtr radarays_sim;
-
 
 bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
          radarays_ros::GetRadarParams::Response &res)
@@ -70,19 +71,62 @@ bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
     return true;
 }
 
+std::vector<float> image_column_to_plot(const cv::Mat& mat, int col)
+{
+    std::vector<float> ret(mat.rows, 0.0);
+
+    auto column_uint = mat.col(col);
+
+    cv::Mat column_float;
+    column_uint.convertTo(column_float, CV_32FC1);
+
+    for(int i=0; i<column_float.rows; i++)
+    {
+        ret[i] = column_float.at<float>(i);
+    }
+
+    return ret;
+}
+
+std_msgs::Float32MultiArray image_column_to_plot(const sensor_msgs::Image::ConstPtr& msg, int viz_column)
+{
+    std_msgs::Float32MultiArray plot;
+    
+    cv::Mat image;
+    try
+    {
+        image = cv_bridge::toCvShare(msg)->image;
+    }
+    catch(cv_bridge::Exception& e)
+    {
+        ROS_ERROR(msg->encoding.c_str());
+        return plot;
+    }
+
+    plot.data = image_column_to_plot(image, viz_column);
+    return plot;
+}
+
 void sync_cb(const sensor_msgs::Image::ConstPtr& sync_msg)
 {
     radarays_sim->loadParams();
     sensor_msgs::ImagePtr msg = radarays_sim->simulate(sync_msg->header.stamp);
-
     if(!msg)
     {
         ROS_INFO_STREAM("SYNC: " << sync_msg->header.stamp << " -- " << " None");
         return;
     }
+
+    int viz_column = 300;
+    if(viz_column >= 0)
+    {
+        const std_msgs::Float32MultiArray plot = image_column_to_plot(sync_msg, viz_column);
+        pub_signals.publish(plot);
+    }
     
     ROS_INFO_STREAM("SYNC: " << sync_msg->header.stamp << " -- " << msg->header.stamp << ", SYN ERR: " << (sync_msg->header.stamp - msg->header.stamp).toSec() * 1000.0 << "ms" );
     pub_polar.publish(msg);
+    pub_polar_gt.publish(sync_msg);
 }
 
 int main_publisher(int argc, char** argv)
@@ -121,9 +165,11 @@ int main_publisher(int argc, char** argv)
     // image transport
     image_transport::ImageTransport it(nh);
     pub_polar = it.advertise("radar/image", 1);
+    pub_polar_gt = it.advertise("radar/image_gt", 1);
 
     // pcl
     pub_pcl = nh_p->advertise<sensor_msgs::PointCloud>("radar/pcl_real", 1);
+    pub_signals = nh_p->advertise<std_msgs::Float32MultiArray>("data_real", 1);
 
     std::string sync_topic = "";
 

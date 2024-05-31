@@ -18,6 +18,8 @@ namespace radarays_ros
 {
 
 
+
+
 /**
  * Simulating radar measurements using a recursive strategy of approximating the rendering equation
 */
@@ -50,7 +52,7 @@ public:
         int tree_depth = 3) const;
 
     std::vector<float> energy_to_decibel(float sent_energy, const std::vector<float>& range_returns, const std::vector<int>& range_counts) const;
-    std::vector<float> blur(const std::vector<float>& energy) const;
+    // std::vector<float> blur(const std::vector<float>& energy) const;
     
     virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
 protected:

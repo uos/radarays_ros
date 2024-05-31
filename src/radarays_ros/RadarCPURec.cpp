@@ -16,12 +16,15 @@
 
 #include <std_msgs/Float32MultiArray.h>
 
+#include <omp.h>
 
 
 namespace rm = rmagine;
 
 namespace radarays_ros
 {
+
+
 
 RadarCPURec::RadarCPURec(
     std::shared_ptr<ros::NodeHandle> nh_p,
@@ -40,6 +43,7 @@ RadarCPURec::RadarCPURec(
 
     // material 0: air
     Material material_air;
+    material_air.name = "AIR";
     material_air.brdf_func = lambertian_brdf;
     material_air.brdf_params.resize(1); // lambertian doesnt need parameters to be set
     material_air.brdf_params[1] = M_PI;
@@ -49,48 +53,40 @@ RadarCPURec::RadarCPURec(
 
     // what is this material?
     Material material1;
-    material1.brdf_func = lambertian_brdf;
+    material1.name = "radarays";
+    material1.brdf_func = radarays_brdf;
     material1.brdf_params.resize(1); // lambertian_brdf needs 1 parameter
-    material1.brdf_params[0] = 0.5; // diffuse amount
+    material1.brdf_params[0] = 0.3; // A: diffuse factor
+    material1.brdf_params[1] = 0.3; // B: glossy factor
+    material1.brdf_params[2] = 100.0; // C: specular exponent, specular factor = 1 - diffuse - glossy
     material1.n = 1000.0;
     material1.transmittance = 0.1;
-    m_materials.push_back(material1);
-
+    // m_materials.push_back(material1);
 
     // what is this material?
     Material material2;
+    material2.name = "blinn_phong";
     material2.brdf_func = blinn_phong_brdf;
     material2.brdf_params.resize(3); // blinn phong needs 3 parameters
     material2.brdf_params[0] = 0.2; // diffuse amount
-    material2.brdf_params[1] = 0.5; // glossy amount
-    material2.brdf_params[2] = 0.3; // specular amount
-    material2.n = 100.0;
-    material2.transmittance = 0.0;
+    material2.brdf_params[1] = 0.3; // glossy amount
+    material2.brdf_params[2] = 100.0; // specular amount
+    material2.n = 1000.0;
+    material2.transmittance = 0.1;
     m_materials.push_back(material2);
 
     // TODO: what is this material
     Material material3;
+    material3.name = "cook_torrance";
     material3.brdf_func = cook_torrance_brdf;
     material3.brdf_params.resize(4); // cook_torrance_brdf needs 2 parameters
     material3.brdf_params[0] = 0.2; // diffuse amount
     material3.brdf_params[1] = 0.5; // roughness
     material3.n = 100.0;
-    material3.transmittance = 0.5;
-    m_materials.push_back(material3);
-
-    // Water?
-    Material material4;
-    material4.brdf_func = cook_torrance_brdf;
-    material4.brdf_params.resize(2); // cook_torrance_brdf needs 2 parameters
-    material4.brdf_params[0] = 0.2; // diffuse amount
-    material4.brdf_params[1] = 0.0; // roughness
-    material4.n = 1.333;
-    material4.transmittance = 1.0;
-    m_materials.push_back(material4);
+    material3.transmittance = 0.1;
+    // m_materials.push_back(material3);
 
     m_data_pub = m_nh_p->advertise<std_msgs::Float32MultiArray>("data", 10);
-
-
 }
 
 void RadarCPURec::setSampleFunc(WaveGenFunc wave_gen_func)
@@ -282,40 +278,73 @@ float RadarCPURec::renderSingleWave(
             // std::cout << "Free between hit and sender!" << std::endl;
             // intersection is visible by the sender
             rm::Vector dir_to_sender = (sender.Tsm.t - incidence.ray.orig);
-            float distance_to_sender = dir_to_sender.l2norm();
+            const float distance_to_sender = dir_to_sender.l2norm();
             dir_to_sender.normalizeInplace();
-            float Li = sender.getEnergyDensity(-dir_to_sender); // incoming radiance part
-
-            // std::cout << "Li: " << Li << std::endl;
-            if(Li < 0.0)
-            {
-                std::cout << "Li<0 : " << Li << std::endl;
-            }
-            assert(Li >= 0.0);
-
+            
             if(are_same_medium(-incidence.ray.dir, intersection.normal, dir_to_sender))
             {   
-                float nwi = intersection.normal.dot(-incidence.ray.dir);
-                assert(nwi >= 0.0);
+                // send wave to sender
+                DirectedWave wave_to_sender = reflection_fresnel;
+                wave_to_sender.ray.dir = dir_to_sender;
+
+
                 float fr = intersection.brdf(incidence, dir_to_sender);
                 assert(fr == fr);
                 assert(fr >= 0.0);
-                float Lr0 = fr * Li * nwi; // reflection part that comes directly from the sender
+                
+                wave_to_sender.energy *= fr; // energy gets smaller at reflection
+                wave_to_sender.moveInplace(distance_to_sender);
 
-                n_samples++;
-                Lo += Lr0;
-                // std::cout << "Adding returned fraction to Lo: " << Lr0 << std::endl;
+                // 
+                float sent_energy_part = sender.getEnergyDensity(-wave_to_sender.ray.dir);
+                
+                // distance travelled (assuming the wave was all the time in air)
+                const float distance_travelled = wave_to_sender.getDistanceAir();
+                const float expected_object_distance = distance_travelled / 2.0;
+                const float energy_part = sent_energy_part * wave_to_sender.energy;
+
+                int distance_bucket = expected_object_distance / m_cfg.resolution;
+                if(distance_bucket < range_returns.size())
+                {
+                    range_returns[distance_bucket] += energy_part;
+                    range_counts[distance_bucket] += 1;
+                }
+
             } else {
                 // what if the sender is in the transmitted material?
                 // std::cout << "Incident wave and sender are in diffeent media" << std::endl;
-                
+
+                DirectedWave wave_to_sender = transmission_fresnel;
+                wave_to_sender.ray.dir = dir_to_sender;
+
+                 // TODO: how to scatter at transmission?
+                float fr = 1.0 / M_PI;
+                wave_to_sender.energy *= fr; // energy gets smaller at reflection
+                wave_to_sender.moveInplace(distance_to_sender);
+
+                // 
+                float sent_energy_part = sender.getEnergyDensity(-wave_to_sender.ray.dir);
+
+                // distance travelled (assuming the wave was all the time in air)
+                const float distance_travelled = wave_to_sender.getDistanceAir();
+                const float expected_object_distance = distance_travelled / 2.0;
+                const float energy_part = sent_energy_part * wave_to_sender.energy;
+
+                int distance_bucket = expected_object_distance / m_cfg.resolution;
+                if(distance_bucket < range_returns.size())
+                {
+                    range_returns[distance_bucket] += energy_part;
+                    range_counts[distance_bucket] += 1;
+                }
             }
         } else {
             // occluded: can this be part valuable?
             // std::cout << "No free way between hit and sender :(" << std::endl;
         }
 
+
         float current_distance = incidence.getDistanceAir();
+
         int current_cell = static_cast<int>(current_distance / m_cfg.resolution);
 
         // compute the rest of the energy
@@ -330,7 +359,6 @@ float RadarCPURec::renderSingleWave(
             // collect L1 - Ln from next rays
 
             // TODO: compute these numbers based on refractive indices
-
             size_t n_rays = 100;
 
             const float total_reflection_energy = reflection_fresnel.energy;            
@@ -344,8 +372,8 @@ float RadarCPURec::renderSingleWave(
             // monte carlo split
             std::random_device rd; // obtain a random number from hardware
             std::mt19937 gen(rd()); // seed the generator
-            std::uniform_real_distribution<float> distr(0.0, 1.0); // define the range
-
+            std::uniform_real_distribution<float> dist_uni(0.0, 1.0); // define the range
+            std::normal_distribution<float> dist_normal(0.0, 1.0);
 
             // Monte Carlo Integration:
             // 
@@ -366,32 +394,43 @@ float RadarCPURec::renderSingleWave(
             // for a unitsphere the area is 4pi. So for a hemisphere it is 2pi
             // but in theory we can consider the area as constant we apply as postprocessing step
 
-            const float P = distr(gen);
+            const float P = dist_uni(gen);
             if(P < P_reflect)
             {
-                // reflect
-                // std::cout << "Reflect!" << std::endl;
-
+                float nwi = intersection.normal.dot(-incidence.ray.dir);
                 DirectedWave Xi = reflection_fresnel;
 
-                const float Li = renderSingleWave(Xi, sender, range_returns, range_counts, tree_depth - 1);
+                // // 90 degree opening angle is hit 50% of the time. +-45 degree around reflection dir
+                // float z = 0.67; // erfinf(p=0.5) * sqrt(2)
+                // float radius = 45.0 * M_PI / 180.0;
+
+                // const float random_angle = dist_uni(gen) * 2.0f * M_PI - M_PI;
+                // const float random_radius = sqrt(abs(dist_normal(gen)) / z);
+                // float alpha = random_radius * cos(random_angle);
+                // float beta = random_radius * sin(random_angle);
+
+                // rm::EulerAngles e = {0.f, alpha, beta};
+                // Xi.ray.dir = e * Xi.ray.dir;
+
+                // const float dist_to_surface = Xi.ray.dir.dot(intersection.normal);
+                // if(dist_to_surface < 0.0)
+                // {
+                //     // wrong side: just flip. no better idea
+                //     Xi.ray.dir = Xi.ray.dir - intersection.normal * dist_to_surface * 2.0; // should be normed after this
+                // }
+
                 const float fr = intersection.brdf(incidence, Xi.ray.dir);
                 assert(fr == fr); // nan not allowed
+                Xi.energy *= fr * M_PI * nwi;
 
-                float nwi = intersection.normal.dot(-incidence.ray.dir);
-                // compute reflected radiance
-                float Lri = fr * Li * nwi;
+                renderSingleWave(Xi, sender, range_returns, range_counts, tree_depth - 1);
 
-                // divide this by the
-                // monte carlo integration
-                Lo += Lri;
-                n_samples++;
             } else if(P < P_reflect + P_transmit) {
                 // transmit
                 DirectedWave Xi = transmission_fresnel;
-                const float Li = renderSingleWave(Xi, sender, range_returns, range_counts, tree_depth - 1);
-                Lo += Li;
-                n_samples++;
+                renderSingleWave(Xi, sender, range_returns, range_counts, tree_depth - 1);
+                // Lo += Li;
+                // n_samples++;
             } else {
                 // absorption
             }
@@ -400,17 +439,17 @@ float RadarCPURec::renderSingleWave(
         // std::cout << "Collected " << n_samples << " valid samples for computing the integral" << std::endl;
         if(n_samples > 0)
         {
-            float distance = incidence.getDistanceAir();
-            int distance_bucket = distance / m_cfg.resolution;
-            if(distance_bucket < range_returns.size())
-            {
-                const float Eo = Lo * incidence.energy;
-                // std::cout << "Adding " << Eo << std::endl;
-                range_returns[distance_bucket] += Eo;
-                range_counts[distance_bucket] += n_samples;
-            } else {
-                // std::cout << "Out of range!" << std::endl;
-            }
+            // float distance = incidence.getDistanceAir();
+            // int distance_bucket = distance / m_cfg.resolution;
+            // if(distance_bucket < range_returns.size())
+            // {
+            //     const float Eo = Lo * incidence.energy;
+            //     // std::cout << "Adding " << Eo << std::endl;
+            //     range_returns[distance_bucket] += Eo;
+            //     range_counts[distance_bucket] += n_samples;
+            // } else {
+            //     // std::cout << "Out of range!" << std::endl;
+            // }
         }
 
         return Lo;
@@ -440,27 +479,14 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
     updateTsm();
 
-    // a buffer to store the returned energy per distance (cell)
-    std::vector<float> range_returns(m_cfg.n_cells, 0.0);
-    // for monte carlo integration
-    std::vector<int> range_counts(m_cfg.n_cells, 0);
+    // copy the parameters once so that they cannot be changed during one simulation
+    int n_cells = m_polar_image.rows;
+    int n_angles = m_polar_image.cols;
 
-    rm::Transform Tas = rm::Transform::Identity();
-    Tas.R = rm::EulerAngles{0.0, 0.0, M_PI/2.0}; // the scanner is at 90 degree rotation
+    int viz_column = 300;
+    std_msgs::Float32MultiArray viz_data;
 
-    Sender sender;
-    sender.Tsm = Tsm_last * Tas;
-    sender.energy_density_func = [](const rm::Vector dir) -> float {
-        const rm::Vector front = {1.0, 0.0, 0.0};
-        float scalar = front.dot(dir);
-        return std::clamp(scalar, 0.f, 1.f);
-    };
-
-    Receiver receiver;
-    receiver.Tsm = sender.Tsm; // place receive at same point as sender
-
-    // rm::Transform bla = receiver.Tsm;
-    // std::cout << "Radar at: " << receiver.Tsm.t.x << ", " << receiver.Tsm.t.y << ", " << receiver.Tsm.t.z << std::endl;
+    std::cout << "Simulate!" << std::endl;
 
     DirectedWave wave;
     wave.energy       =  1.0; //
@@ -471,35 +497,72 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
     wave.ray.dir = {1.0, 0.0, 0.0};
     wave.material = &m_materials[0]; // air
 
-    wave = receiver.Tsm * wave;
-    
-    size_t n_rays = 10000;
-    float total_returns = 0.0;
-
-
-    for(size_t i=0; i<n_rays; i++)
+    if(m_resample)
     {
-        wave.ray.dir = sample_hemisphere_uniform();
-        float Li = renderSingleWave(wave, sender, range_returns, range_counts, 10);
-        total_returns += Li;
+        std::cout << "RESAMPLE!" << std::endl;
+        m_waves_start = sample_cone_local(
+            wave,
+            m_params.model.beam_width,
+            m_params.model.n_samples,
+            m_cfg.beam_sample_dist,
+            m_cfg.beam_sample_dist_normal_p_in_cone);
+        m_resample = false;
     }
 
-    // std::cout << "Return: " << total_returns / static_cast<float>(n_rays) << std::endl;
-    
-    const double sent_log = 10.0 * log(wave.energy);
-    const double pixel_val_at_decibel_zero = m_cfg.signal_max;
-    
 
-    std::vector<float> decibels = energy_to_decibel(wave.energy, range_returns, range_counts);
-    decibels = blur(decibels);
+    int processors = omp_get_num_procs();
+    std::cout << "OpenMP" << std::endl;
+    std::cout << "- PROCS: " << omp_get_num_procs() << std::endl;
+
+    omp_set_num_threads(processors);
     
 
-    std_msgs::Float32MultiArray data_msg;
-    data_msg.data = decibels;
-    m_data_pub.publish(data_msg);
+    // #pragma omp parallel for
+    #pragma omp parallel for default(shared)
+    for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
+    {
+        // std::cout << "Thread: " << omp_get_thread_num()+1 << "/" << omp_get_num_threads() << std::endl;
+        
+        // std::cout << angle_id+1 << "/" << n_angles <<  std::endl;
+        // a buffer to store the returned energy per distance (cell)
+        std::vector<float> range_returns(n_cells, 0.0);
+        // for monte carlo integration
+        std::vector<int> range_counts(n_cells, 0);
 
-    int n_cells = m_polar_image.rows;
-    int n_angles = m_polar_image.cols;
+        rm::Transform Tas = rm::Transform::Identity();
+        Tas.t = m_radar_model.getOrigin(0, angle_id);
+        const double theta = m_radar_model.getTheta(angle_id);
+        Tas.R = rm::EulerAngles{0.0, 0.0, m_radar_model.getTheta(angle_id)};
+
+        Sender sender;
+        sender.Tsm = Tsm_last * Tas;
+        sender.energy_density_func = [](const rm::Vector dir) -> float {
+            const rm::Vector front = {1.0, 0.0, 0.0};
+            float scalar = front.dot(dir);
+            return std::clamp(scalar, 0.f, 1.f);
+        };
+
+        Receiver receiver;
+        receiver.Tsm = sender.Tsm; // place receive at same point as sender
+        for(size_t i=0; i<m_waves_start.size(); i++)
+        {
+            auto wave = receiver.Tsm * m_waves_start[i];
+            renderSingleWave(wave, sender, range_returns, range_counts, m_params.model.n_reflections);
+        }
+        
+        const double sent_log = 10.0 * log(wave.energy);
+        const double pixel_val_at_decibel_zero = m_cfg.signal_max;
+        
+        range_returns = blur_kalman(range_returns, range_counts, 1.0);
+        std::vector<float> decibels = energy_to_decibel(wave.energy, range_returns, range_counts);
+
+        int col = (m_cfg.scroll_image + angle_id) % m_polar_image.cols;
+        
+        cv::Mat slice(decibels.size(), 1, CV_32FC1, decibels.data());
+        slice.convertTo(m_polar_image.col(col), CV_8UC1);
+    }
+
+    m_data_pub.publish(viz_data);
 
     // prepare output
     msg = cv_bridge::CvImage(
@@ -517,7 +580,7 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
 std::vector<float> RadarCPURec::energy_to_decibel(
     float sent_energy,
-    const std::vector<float>& range_returns, 
+    const std::vector<float>& range_returns,
     const std::vector<int>& range_counts) const
 {
     std::vector<float> decibels(range_returns.size(), 0.0);
@@ -536,30 +599,13 @@ std::vector<float> RadarCPURec::energy_to_decibel(
             decibels[i] = pixel_val_at_decibel_zero - decibel;
         }
     }
+
+    return decibels;
 }
 
-std::vector<float> RadarCPURec::blur(const std::vector<float>& energy) const
-{
-    std::vector<float> ret(energy.size(), 0.0);
 
-    std::vector<float> kernel = {0.2, 0.5, 0.3, 0.1};
-    int mode = 1; // which elemet is the mode (usually somewhere in the middle)
 
-    for(int i=0; i<energy.size(); i++)
-    {
-        int src_id = i;
-        for(int j=-mode; j<kernel.size()-mode; j++)
-        {
-            int tgt_id = i + j;
-            if(tgt_id > 0 && tgt_id < ret.size())
-            {
-                ret[tgt_id] += kernel[j] * energy[i];
-            }
-        }
-    }
 
-    return ret;
-}
 
 
 } // namespace radarays

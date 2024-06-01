@@ -25,6 +25,23 @@ namespace radarays_ros
 {
 
 
+BRDFFunc make_brdf(std::string type)
+{
+    if(type == "radarays")
+    {
+        return radarays_brdf;
+    } else if(type == "lambertian") {
+        return lambertian_brdf;
+    } else if(type == "blinn_phong") {
+        return blinn_phong_brdf;
+    } else if(type == "cook_torrance") {
+        return cook_torrance_brdf;
+    } else {
+        std::stringstream ss;
+        ss << "BRDF type '" << type << "' unknown!";
+        throw std::runtime_error(ss.str());
+    }
+}
 
 RadarCPURec::RadarCPURec(
     std::shared_ptr<ros::NodeHandle> nh_p,
@@ -51,10 +68,11 @@ RadarCPURec::RadarCPURec(
     material_air.transmittance = 1.0;
     m_materials.push_back(material_air);
 
+
     // what is this material?
     Material material1;
     material1.name = "radarays";
-    material1.brdf_func = radarays_brdf;
+    material1.brdf_func = make_brdf("radarays");
     material1.brdf_params.resize(1); // lambertian_brdf needs 1 parameter
     material1.brdf_params[0] = 0.3; // A: diffuse factor
     material1.brdf_params[1] = 0.3; // B: glossy factor
@@ -66,7 +84,7 @@ RadarCPURec::RadarCPURec(
     // what is this material?
     Material material2;
     material2.name = "blinn_phong";
-    material2.brdf_func = blinn_phong_brdf;
+    material2.brdf_func = make_brdf("blinn_phong");
     material2.brdf_params.resize(3); // blinn phong needs 3 parameters
     material2.brdf_params[0] = 0.2; // diffuse amount
     material2.brdf_params[1] = 0.3; // glossy amount
@@ -75,16 +93,14 @@ RadarCPURec::RadarCPURec(
     material2.transmittance = 0.1;
     m_materials.push_back(material2);
 
-    // TODO: what is this material
     Material material3;
     material3.name = "cook_torrance";
-    material3.brdf_func = cook_torrance_brdf;
+    material3.brdf_func = make_brdf("cook_torrance");
     material3.brdf_params.resize(4); // cook_torrance_brdf needs 2 parameters
     material3.brdf_params[0] = 0.2; // diffuse amount
     material3.brdf_params[1] = 0.5; // roughness
     material3.n = 100.0;
     material3.transmittance = 0.1;
-    // m_materials.push_back(material3);
 
     m_data_pub = m_nh_p->advertise<std_msgs::Float32MultiArray>("data", 10);
 }

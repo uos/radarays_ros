@@ -19,11 +19,23 @@
 #include <omp.h>
 
 
+
 namespace rm = rmagine;
+
+
+
 
 namespace radarays_ros
 {
 
+// using ::operator<<;
+
+// template<typename DataT>
+// inline std::ostream& operator<<(std::ostream& os, const rmagine::Vector3_<float>& v)
+// {
+//     os << "v[" << v.x << "," << v.y << "," << v.z << "]";
+//     return os;
+// }
 
 BRDFFunc make_brdf(std::string type)
 {
@@ -74,11 +86,11 @@ RadarCPURec::RadarCPURec(
     material1.name = "radarays";
     material1.brdf_func = make_brdf("radarays");
     material1.brdf_params.resize(1); // lambertian_brdf needs 1 parameter
-    material1.brdf_params[0] = 0.3; // A: diffuse factor
-    material1.brdf_params[1] = 0.3; // B: glossy factor
-    material1.brdf_params[2] = 100.0; // C: specular exponent, specular factor = 1 - diffuse - glossy
-    material1.n = 1000.0;
-    material1.transmittance = 0.1;
+    material1.brdf_params[0] = 0.6;  // A: diffuse factor
+    material1.brdf_params[1] = 0.3;  // B: glossy factor
+    material1.brdf_params[2] = 53.0; // C: specular exponent, specular factor = 1 - diffuse - glossy
+    material1.n = 1000000.0;
+    material1.transmittance = 0.0;
     // m_materials.push_back(material1);
 
     // what is this material?
@@ -86,12 +98,12 @@ RadarCPURec::RadarCPURec(
     material2.name = "blinn_phong";
     material2.brdf_func = make_brdf("blinn_phong");
     material2.brdf_params.resize(3); // blinn phong needs 3 parameters
-    material2.brdf_params[0] = 0.2; // diffuse amount
-    material2.brdf_params[1] = 0.3; // glossy amount
-    material2.brdf_params[2] = 100.0; // specular amount
+    material2.brdf_params[0] = 0.5; // diffuse amount
+    material2.brdf_params[1] = 0.2; // glossy amount
+    material2.brdf_params[2] = 1.0; // specular amount
     material2.n = 1000.0;
     material2.transmittance = 0.1;
-    m_materials.push_back(material2);
+    // m_materials.push_back(material2);
 
     Material material3;
     material3.name = "cook_torrance";
@@ -101,6 +113,18 @@ RadarCPURec::RadarCPURec(
     material3.brdf_params[1] = 0.5; // roughness
     material3.n = 100.0;
     material3.transmittance = 0.1;
+    m_materials.push_back(material3);
+
+
+    // Material material3;
+    // material3.name = "cook_torrance";
+    // material3.brdf_func = make_brdf("cook_torrance");
+    // material3.brdf_params.resize(4); // cook_torrance_brdf needs 2 parameters
+    // material3.brdf_params[0] = 0.02; // diffuse amount
+    // material3.brdf_params[1] = 0.8; // roughness
+    // material3.n = 100.0;
+    // material3.transmittance = 0.1;
+    // m_materials.push_back(material3);
 
     m_data_pub = m_nh_p->advertise<std_msgs::Float32MultiArray>("data", 10);
 }
@@ -251,7 +275,7 @@ float RadarCPURec::renderSingleWave(
 
     // TODO: implement
     // 1. find intersection with scene
-    // 2. send ray from intersection to sender
+    // 2. send ray from intersection to sender to see how much is going to sender
     // 3. if tree_depth > 0: scatter for reflection and transmission
     DirectedWave incidence = wave;
     const auto hit = intersect(incidence);
@@ -263,19 +287,10 @@ float RadarCPURec::renderSingleWave(
     }
 
     if(hit)
-    {   
+    {
         const Intersection intersection = *hit;
-
         DirectedWave reflection_fresnel, transmission_fresnel;
         std::tie(reflection_fresnel, transmission_fresnel) = intersection.fresnel(incidence);
-
-        // std::cout << "Fresnel Energy Split:" << std::endl;
-        // std::cout << "- Reflection: " << reflection_fresnel.energy << std::endl;
-        // std::cout << "- Transmission: " << transmission_fresnel.energy << std::endl;
-        // std::cout << "-> Energy conservation: " << reflection_fresnel.energy + transmission_fresnel.energy << std::endl;
-        // std::cout << "--- Transmission (including absorption): " << transmission_fresnel.energy 
-        //           << " * " << transmission_fresnel.material->transmittance 
-        //           << " = " << transmission_fresnel.energy * transmission_fresnel.material->transmittance << std::endl;
 
         // convervation of energy
         assert(abs(1.0 - reflection_fresnel.energy - transmission_fresnel.energy) < 0.00001);
@@ -303,7 +318,6 @@ float RadarCPURec::renderSingleWave(
                 DirectedWave wave_to_sender = reflection_fresnel;
                 wave_to_sender.ray.dir = dir_to_sender;
 
-
                 float fr = intersection.brdf(incidence, dir_to_sender);
                 assert(fr == fr);
                 assert(fr >= 0.0);
@@ -329,7 +343,6 @@ float RadarCPURec::renderSingleWave(
             } else {
                 // what if the sender is in the transmitted material?
                 // std::cout << "Incident wave and sender are in diffeent media" << std::endl;
-
                 DirectedWave wave_to_sender = transmission_fresnel;
                 wave_to_sender.ray.dir = dir_to_sender;
 
@@ -493,8 +506,6 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
         std::cout << "[RadarCPURec] Resizing canvas - done." << std::endl;
     }
 
-    updateTsm();
-
     // copy the parameters once so that they cannot be changed during one simulation
     int n_cells = m_polar_image.rows;
     int n_angles = m_polar_image.cols;
@@ -504,41 +515,58 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
     std::cout << "Simulate!" << std::endl;
 
-    DirectedWave wave;
-    wave.energy       =  1.0; //
-    wave.polarization =  0.5;
-    wave.frequency    = 76.5; // GHz
-    wave.time         =  0.0; // in ns
-    wave.ray.orig = {0.0, 0.0, 0.0};
-    wave.ray.dir = {1.0, 0.0, 0.0};
-    wave.material = &m_materials[0]; // air
+    // wave template
+    DirectedWave wave_init;
+    wave_init.energy       =  1.0; //
+    wave_init.polarization =  0.5;
+    wave_init.frequency    = 76.5; // GHz
+    wave_init.time         =  0.0; // in ns
+    wave_init.ray.orig = {0.0, 0.0, 0.0};
+    wave_init.ray.dir = {1.0, 0.0, 0.0};
+    wave_init.material = &m_materials[0]; // air
 
-    if(m_resample)
-    {
-        std::cout << "RESAMPLE!" << std::endl;
-        m_waves_start = sample_cone_local(
-            wave,
-            m_params.model.beam_width,
-            m_params.model.n_samples,
-            m_cfg.beam_sample_dist,
-            m_cfg.beam_sample_dist_normal_p_in_cone);
-        m_resample = false;
-    }
-
+    // if(m_resample)
+    // {
+    //     // precompute initial set of waves
+    //     m_waves_start = sample_cone_local(
+    //         wave,
+    //         m_params.model.beam_width,
+    //         m_params.model.n_samples,
+    //         m_cfg.beam_sample_dist,
+    //         m_cfg.beam_sample_dist_normal_p_in_cone);
+    //     m_resample = false;
+    // }
 
     int processors = omp_get_num_procs();
     std::cout << "OpenMP" << std::endl;
     std::cout << "- PROCS: " << omp_get_num_procs() << std::endl;
 
     omp_set_num_threads(processors);
-    
 
+    updateTsm();
+
+    const double desired_rate = 4.0; // 4 hz
+    const double desired_duration = 1.0 / desired_rate; // in seconds
+    const double disered_duration_per_angle = desired_duration / static_cast<float>(n_angles);
+
+
+    std::vector<rm::Transform> Tsm_at_angle(n_angles, Tsm_last);
+    std::vector<bool>          Tsm_available(n_angles, true);
+
+    
     // #pragma omp parallel for
     #pragma omp parallel for default(shared)
     for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
     {
-        // std::cout << "Thread: " << omp_get_thread_num()+1 << "/" << omp_get_num_threads() << std::endl;
-        
+        double past_time = desired_duration - disered_duration_per_angle * static_cast<float>(angle_id+1);
+        ros::Time angle_stamp = stamp - ros::Duration(past_time);
+
+        if(!Tsm_available[angle_id])
+        {
+            std::cout << "WARNING! No transform available" << std::endl;
+        }
+
+        const rm::Transform Tsm = Tsm_at_angle[angle_id];
         // std::cout << angle_id+1 << "/" << n_angles <<  std::endl;
         // a buffer to store the returned energy per distance (cell)
         std::vector<float> range_returns(n_cells, 0.0);
@@ -551,7 +579,7 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
         Tas.R = rm::EulerAngles{0.0, 0.0, m_radar_model.getTheta(angle_id)};
 
         Sender sender;
-        sender.Tsm = Tsm_last * Tas;
+        sender.Tsm = Tsm * Tas;
         sender.energy_density_func = [](const rm::Vector dir) -> float {
             const rm::Vector front = {1.0, 0.0, 0.0};
             float scalar = front.dot(dir);
@@ -560,17 +588,34 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
         Receiver receiver;
         receiver.Tsm = sender.Tsm; // place receive at same point as sender
-        for(size_t i=0; i<m_waves_start.size(); i++)
+
+        const std::vector<DirectedWave> waves = sample_cone_local(
+            wave_init,
+            m_params.model.beam_width,
+            m_params.model.n_samples,
+            m_cfg.beam_sample_dist,
+            m_cfg.beam_sample_dist_normal_p_in_cone);
+
+        for(size_t i=0; i<waves.size(); i++)
         {
-            auto wave = receiver.Tsm * m_waves_start[i];
+            auto wave = receiver.Tsm * waves[i];
+            // energy is splitted equally over all rays
+            // the total energy per volume is still higher in the center
+            // -> sampler
+            wave.energy /= static_cast<float>(waves.size());
             renderSingleWave(wave, sender, range_returns, range_counts, m_params.model.n_reflections);
         }
         
-        const double sent_log = 10.0 * log(wave.energy);
+        const double sent_log = 10.0 * log(wave_init.energy);
         const double pixel_val_at_decibel_zero = m_cfg.signal_max;
         
-        range_returns = blur_kalman(range_returns, range_counts, 1.0);
-        std::vector<float> decibels = energy_to_decibel(wave.energy, range_returns, range_counts);
+        // the more waves we have the more we trust our system
+        // 1 wave -> 100 process noise added per pixel
+        // 100 waves -> 1 process noise added per pixel
+        float process_noise = 100.0 / static_cast<float>(waves.size());
+
+        range_returns = blur_kalman(range_returns, range_counts, process_noise);
+        std::vector<float> decibels = energy_to_decibel(wave_init.energy, range_returns, range_counts);
 
         int col = (m_cfg.scroll_image + angle_id) % m_polar_image.cols;
         
@@ -622,6 +667,77 @@ std::vector<float> RadarCPURec::energy_to_decibel(
 
 
 
+// override this if desired
+
+// rm::Transform Tsm_angle_last = Tsm_last;
+// size_t angle_id_last = 0;
+// rm::Transform Tsm_new = *getTsm(stamp);
+
+// // Tsms:
+// // - Tsm_last: at beginning of the message
+// // - Tsm_new: at end of the message
+// // - Tsm_angle_last: last valid angle Tsm
+
+// for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
+// {
+//     double past_time = desired_duration - disered_duration_per_angle * static_cast<float>(angle_id + 1);
+//     ros::Time angle_stamp = stamp - ros::Duration(past_time);
+
+//     try {
+//         geometry_msgs::TransformStamped Tsm_ros;
+//         Tsm_ros = m_tf_buffer->lookupTransform(
+//             m_map_frame,
+//             m_sensor_frame,
+//             angle_stamp
+//         );
+        
+//         rm::Transform Tsm; 
+//         Tsm.t.x = Tsm_ros.transform.translation.x;
+//         Tsm.t.y = Tsm_ros.transform.translation.y;
+//         Tsm.t.z = Tsm_ros.transform.translation.z;
+//         Tsm.R.x = Tsm_ros.transform.rotation.x;
+//         Tsm.R.y = Tsm_ros.transform.rotation.y;
+//         Tsm.R.z = Tsm_ros.transform.rotation.z;
+//         Tsm.R.w = Tsm_ros.transform.rotation.w;
+//         Tsm.stamp = (Tsm_ros.header.stamp - angle_stamp).toSec(); // result stamp - requested stamp
+
+//         Tsm_at_angle[angle_id] = Tsm;
+//         Tsm_available[angle_id] = true;
+//         Tsm_angle_last = Tsm;
+//         angle_id_last = angle_id;
+//     } catch(const tf2::TransformException& ex) {
+//         // TODO: what to do here?
+//         // throw std::runtime_error("DONT KNOW WHAT TO DO");
+//         // std::cout << "Couldnt find transform!" << std::endl;
+//         // try to interpolate
+        
+//         size_t left_angles = n_angles - (angle_id_last + 1);
+//         rm::Transform Tsm;
+//         if(left_angles > 0)
+//         {
+            
+//             size_t angle_loc = angle_id - angle_id_last;
+//             float t = static_cast<float>(angle_loc) / static_cast<float>(left_angles);
+//             rm::Transform T_new_angle = ~Tsm_angle_last * Tsm_new;
+
+//             rm::Transform Tsm = Tsm_angle_last * T_new_angle.pow(t);
+
+//             std::cout << "Try to interpolate" << std::endl;
+//             std::cout << "between " << Tsm_angle_last << " and " << Tsm_new << std::endl;
+//             std::cout << "- delta: " << T_new_angle << std::endl;
+//             std::cout << "- t: " << t << std::endl;
+//             std::cout << "- delta^t: " << T_new_angle.pow(t) << std::endl;
+//             std::cout << "- result: " << Tsm << std::endl;
+            
+
+//         } else {
+//             Tsm = Tsm_new;
+//         }
+
+//         Tsm_at_angle[angle_id] = Tsm;
+//         Tsm_available[angle_id] = true;
+//     }
+// }
 
 
-} // namespace radarays
+} // namespace radarays_ros

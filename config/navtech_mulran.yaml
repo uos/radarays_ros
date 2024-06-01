@@ -1,0 +1,12 @@
+phi:
+  min: -3.14159265359
+  N:   400 # x axis of image
+  inc: 0.015707963267948967 # 2pi / 400
+theta: # empty: 2D radar
+  min: 0.0
+  N:   1
+  inc: 0.0
+range:
+  min: 0.0 # maybe because of the mirror? the first pixels in the image are signals received somewhere between sensor, mirror, and cover
+  N:   3360 # y axis of image
+  inc: 0.0595238 # 150.0 (max range) / 3424

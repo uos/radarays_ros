@@ -139,6 +139,8 @@ int main_publisher(int argc, char** argv)
     nh_p = std::make_shared<ros::NodeHandle>("~");
 
 
+    std::cout << "CREATING TF BUFFER WITH CACHE TIME: " << tf2::BufferCore::DEFAULT_CACHE_TIME << std::endl;
+
     // setting up tf
     tf_buffer = std::make_shared<tf2_ros::Buffer>();
     tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);

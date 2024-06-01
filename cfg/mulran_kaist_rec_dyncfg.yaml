@@ -1,0 +1,38 @@
+!!python/object/new:dynamic_reconfigure.encoding.Config
+dictitems:
+  ambient_noise: 2
+  ambient_noise_at_signal_0: 0.3
+  ambient_noise_at_signal_1: 0.03
+  ambient_noise_energy_loss: 0.05
+  ambient_noise_energy_max: 0.5
+  ambient_noise_energy_min: 0.1
+  ambient_noise_perlin_p_low: 0.9
+  ambient_noise_perlin_scale_high: 0.2
+  ambient_noise_perlin_scale_low: 0.05
+  ambient_noise_uniform_max: 0.15
+  beam_sample_dist: 2
+  beam_sample_dist_normal_p_in_cone: 0.75
+  beam_width: 3.5
+  energy_max: 0.5
+  energy_min: 0.0
+  include_motion: true
+  multipath_threshold: 0.5
+  n_cells: 3360
+  n_reflections: 5
+  n_samples: 200
+  range_max: 600.0
+  range_min: 0.0
+  record_multi_path: false
+  record_multi_reflection: true
+  resolution: 0.0595238
+  scroll_image: 0
+  signal_denoising: 1
+  signal_denoising_gaussian_mode: 0.5
+  signal_denoising_gaussian_width: 50
+  signal_denoising_mb_mode: 0.4
+  signal_denoising_mb_width: 50
+  signal_denoising_triangular_mode: 0.35
+  signal_denoising_triangular_width: 50
+  signal_max: 80.0
+  z_offset: 0.0
+state: []

@@ -37,7 +37,7 @@
 #include <radarays_ros/image_algorithms.h>
 #include <radarays_ros/radar_algorithms.h>
 
-#include <radarays_ros/RadarCPURec.hpp>
+#include <radarays_ros/RadarCPUFlex.hpp>
 
 
 using namespace radarays_ros;
@@ -138,9 +138,6 @@ int main_publisher(int argc, char** argv)
     ros::NodeHandle nh;
     nh_p = std::make_shared<ros::NodeHandle>("~");
 
-
-    std::cout << "CREATING TF BUFFER WITH CACHE TIME: " << tf2::BufferCore::DEFAULT_CACHE_TIME << std::endl;
-
     // setting up tf
     tf_buffer = std::make_shared<tf2_ros::Buffer>();
     tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
@@ -153,8 +150,9 @@ int main_publisher(int argc, char** argv)
      
     rm::EmbreeMapPtr map_cpu = rm::import_embree_map(map_file);
 
-    std::cout << "RadarCPURec" << std::endl;
-    radarays_sim = std::make_shared<RadarCPURec>(
+    std::cout << "'" << map_file << "' loaded." << std::endl; 
+
+    radarays_sim = std::make_shared<RadarCPUFlex>(
         nh_p,
         tf_buffer,
         tf_listener,
@@ -163,6 +161,7 @@ int main_publisher(int argc, char** argv)
         map_cpu
     );
 
+    std::cout << "RadarCPUFlex ready." << std::endl;
 
     // image transport
     image_transport::ImageTransport it(nh);

@@ -31,7 +31,10 @@ using BRDFFunc = std::function<float( // returns reflectance value
             const rm::Vector3& // out_direction
             )>;
 
-using WaveGenFunc = std::function<std::vector<DirectedWave>()>;
+/**
+ * How the receiver samples the scene with rays initially
+*/
+using InitSamplingFunc = std::function<std::vector<DirectedWave>()>;
 
 using SamplingFunc = std::function<rm::Vector(
     const DirectedWave&, // incident wave

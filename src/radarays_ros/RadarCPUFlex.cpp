@@ -1,6 +1,6 @@
 
 
-#include "radarays_ros/RadarCPURec.hpp"
+#include "radarays_ros/RadarCPUFlex.hpp"
 
 #include <cv_bridge/cv_bridge.h>
 #include <omp.h>
@@ -28,15 +28,9 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-// using ::operator<<;
-
-// template<typename DataT>
-// inline std::ostream& operator<<(std::ostream& os, const rmagine::Vector3_<float>& v)
-// {
-//     os << "v[" << v.x << "," << v.y << "," << v.z << "]";
-//     return os;
-// }
-
+/**
+ * Example of how to generate a BRDF function from string (factory)
+*/
 BRDFFunc make_brdf(std::string type)
 {
     if(type == "radarays")
@@ -55,7 +49,7 @@ BRDFFunc make_brdf(std::string type)
     }
 }
 
-RadarCPURec::RadarCPURec(
+RadarCPUFlex::RadarCPUFlex(
     std::shared_ptr<ros::NodeHandle> nh_p,
     std::shared_ptr<tf2_ros::Buffer> tf_buffer,
     std::shared_ptr<tf2_ros::TransformListener> tf_listener,
@@ -126,15 +120,15 @@ RadarCPURec::RadarCPURec(
     // material3.transmittance = 0.1;
     // m_materials.push_back(material3);
 
-    m_data_pub = m_nh_p->advertise<std_msgs::Float32MultiArray>("data", 10);
+    // m_data_pub = m_nh_p->advertise<std_msgs::Float32MultiArray>("data", 10);
 }
 
-void RadarCPURec::setSampleFunc(WaveGenFunc wave_gen_func)
+void RadarCPUFlex::setSampleFunc(InitSamplingFunc init_sampling_func)
 {
-    m_wave_generator = wave_gen_func;
+    m_init_sampling_func = init_sampling_func;
 }
 
-bool RadarCPURec::isFreeInBetween(
+bool RadarCPUFlex::isFreeInBetween(
     const rm::Vector& p1,
     const rm::Vector& p2,
     float t1_offset) const
@@ -162,7 +156,7 @@ bool RadarCPURec::isFreeInBetween(
     return rayhit.hit.geomID == RTC_INVALID_GEOMETRY_ID; // miss -> empty
 }
 
-std::optional<Intersection> RadarCPURec::intersect(DirectedWave& wave) const
+std::optional<Intersection> RadarCPUFlex::intersect(DirectedWave& wave) const
 {
     struct RTCRayHit rayhit;
     rayhit.ray.org_x = wave.ray.orig.x;
@@ -256,7 +250,7 @@ std::string operator*(std::string str, int times)
 
 // from receiver incoming signals along certain direction
 // the returning wave is filled with
-float RadarCPURec::renderSingleWave(
+void RadarCPUFlex::renderSingleWave(
     const DirectedWave& wave,
     const Sender& sender,
     std::vector<float>& range_returns,
@@ -270,7 +264,7 @@ float RadarCPURec::renderSingleWave(
     if(wave.energy < 0.0001)
     {
         // std::cout << "Wave has no energy. Stopping" << std::endl;
-        return 0.0;
+        return;
     }
 
     // TODO: implement
@@ -283,7 +277,7 @@ float RadarCPURec::renderSingleWave(
     if(incidence.energy < 0.00001)
     {
         // std::cout << "After transmission, wave lost to much energy to be measured anymore: " << wave.energy << " -> " << incidence.energy << ". Stopping recursion." << std::endl;
-        return 0.0;
+        return;
     }
 
     if(hit)
@@ -429,6 +423,11 @@ float RadarCPURec::renderSingleWave(
                 float nwi = intersection.normal.dot(-incidence.ray.dir);
                 DirectedWave Xi = reflection_fresnel;
 
+                // Current impl:
+                // - reflect like a perfect mirror, but considering right amount of energy that is reflected
+                // Optimization: 
+                // - reflect more diffuse
+
                 // // 90 degree opening angle is hit 50% of the time. +-45 degree around reflection dir
                 // float z = 0.67; // erfinf(p=0.5) * sqrt(2)
                 // float radius = 45.0 * M_PI / 180.0;
@@ -458,39 +457,43 @@ float RadarCPURec::renderSingleWave(
                 // transmit
                 DirectedWave Xi = transmission_fresnel;
                 renderSingleWave(Xi, sender, range_returns, range_counts, tree_depth - 1);
-                // Lo += Li;
-                // n_samples++;
             } else {
                 // absorption
             }
         }
-
-        // std::cout << "Collected " << n_samples << " valid samples for computing the integral" << std::endl;
-        if(n_samples > 0)
-        {
-            // float distance = incidence.getDistanceAir();
-            // int distance_bucket = distance / m_cfg.resolution;
-            // if(distance_bucket < range_returns.size())
-            // {
-            //     const float Eo = Lo * incidence.energy;
-            //     // std::cout << "Adding " << Eo << std::endl;
-            //     range_returns[distance_bucket] += Eo;
-            //     range_counts[distance_bucket] += n_samples;
-            // } else {
-            //     // std::cout << "Out of range!" << std::endl;
-            // }
-        }
-
-        return Lo;
     } else {
         // miss: do nothing?
     }
-
-    return 0.0;
 }
 
+void RadarCPUFlex::renderWave(
+    const Receiver& receiver,
+    const Sender& sender,
+    const DirectedWave& wave_init,
+    std::vector<float>& range_returns, 
+    std::vector<int>& range_counts) const
+{
+    // const std::vector<DirectedWave> waves = sample_cone_local(
+    //         wave_init,
+    //         m_params.model.beam_width,
+    //         m_params.model.n_samples,
+    //         m_cfg.beam_sample_dist,
+    //         m_cfg.beam_sample_dist_normal_p_in_cone);
 
-sensor_msgs::ImagePtr RadarCPURec::simulate(
+    const std::vector<DirectedWave> waves = receiver.genSamples();
+
+    for(size_t i=0; i<waves.size(); i++)
+    {
+        auto wave = receiver.Tsm * waves[i];
+        // energy is splitted equally over all rays
+        // the total energy per volume is still higher in the center
+        // -> sampler
+        wave.energy /= static_cast<float>(waves.size());
+        renderSingleWave(wave, sender, range_returns, range_counts, m_params.model.n_reflections);
+    }
+}
+
+sensor_msgs::ImagePtr RadarCPUFlex::simulate(
     ros::Time stamp)
 {
     rm::StopWatch sw;
@@ -501,9 +504,9 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
     // 
     if(m_polar_image.rows != m_cfg.n_cells)
     {
-        std::cout << "[RadarCPURec] Resize canvas to " << m_cfg.n_cells << std::endl;
+        std::cout << "[RadarCPUFlex] Resize canvas to " << m_cfg.n_cells << std::endl;
         m_polar_image.resize(m_cfg.n_cells);
-        std::cout << "[RadarCPURec] Resizing canvas - done." << std::endl;
+        std::cout << "[RadarCPUFlex] Resizing canvas - done." << std::endl;
     }
 
     // copy the parameters once so that they cannot be changed during one simulation
@@ -512,8 +515,6 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
     int viz_column = 300;
     std_msgs::Float32MultiArray viz_data;
-
-    std::cout << "Simulate!" << std::endl;
 
     // wave template
     DirectedWave wave_init;
@@ -525,17 +526,6 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
     wave_init.ray.dir = {1.0, 0.0, 0.0};
     wave_init.material = &m_materials[0]; // air
 
-    // if(m_resample)
-    // {
-    //     // precompute initial set of waves
-    //     m_waves_start = sample_cone_local(
-    //         wave,
-    //         m_params.model.beam_width,
-    //         m_params.model.n_samples,
-    //         m_cfg.beam_sample_dist,
-    //         m_cfg.beam_sample_dist_normal_p_in_cone);
-    //     m_resample = false;
-    // }
 
     int processors = omp_get_num_procs();
     std::cout << "OpenMP" << std::endl;
@@ -549,10 +539,10 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
     const double desired_duration = 1.0 / desired_rate; // in seconds
     const double disered_duration_per_angle = desired_duration / static_cast<float>(n_angles);
 
-
+    // Fill these vectors with transformations per angle to 
+    // get correct motion distortion
     std::vector<rm::Transform> Tsm_at_angle(n_angles, Tsm_last);
     std::vector<bool>          Tsm_available(n_angles, true);
-
     
     // #pragma omp parallel for
     #pragma omp parallel for default(shared)
@@ -588,32 +578,24 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
 
         Receiver receiver;
         receiver.Tsm = sender.Tsm; // place receive at same point as sender
-
-        const std::vector<DirectedWave> waves = sample_cone_local(
-            wave_init,
-            m_params.model.beam_width,
-            m_params.model.n_samples,
-            m_cfg.beam_sample_dist,
-            m_cfg.beam_sample_dist_normal_p_in_cone);
-
-        for(size_t i=0; i<waves.size(); i++)
-        {
-            auto wave = receiver.Tsm * waves[i];
-            // energy is splitted equally over all rays
-            // the total energy per volume is still higher in the center
-            // -> sampler
-            wave.energy /= static_cast<float>(waves.size());
-            renderSingleWave(wave, sender, range_returns, range_counts, m_params.model.n_reflections);
-        }
+        receiver.sample_func = [this, wave_init](){
+            return sample_cone_local(
+                wave_init,
+                m_params.model.beam_width,
+                m_params.model.n_samples,
+                m_cfg.beam_sample_dist,
+                m_cfg.beam_sample_dist_normal_p_in_cone);
+        };
         
+        renderWave(receiver, sender, wave_init, range_returns, range_counts);
+
         const double sent_log = 10.0 * log(wave_init.energy);
         const double pixel_val_at_decibel_zero = m_cfg.signal_max;
         
         // the more waves we have the more we trust our system
         // 1 wave -> 100 process noise added per pixel
         // 100 waves -> 1 process noise added per pixel
-        float process_noise = 100.0 / static_cast<float>(waves.size());
-
+        float process_noise = 100.0 / static_cast<float>(m_params.model.n_samples);
         range_returns = blur_kalman(range_returns, range_counts, process_noise);
         std::vector<float> decibels = energy_to_decibel(wave_init.energy, range_returns, range_counts);
 
@@ -623,7 +605,7 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
         slice.convertTo(m_polar_image.col(col), CV_8UC1);
     }
 
-    m_data_pub.publish(viz_data);
+    // m_data_pub.publish(viz_data);
 
     // prepare output
     msg = cv_bridge::CvImage(
@@ -635,11 +617,11 @@ sensor_msgs::ImagePtr RadarCPURec::simulate(
     msg->header.frame_id = m_sensor_frame;
     
     double el = sw();
-    std::cout << "Image simulation speed: " << el << " s" << std::endl;
+    std::cout << "[RadarCPUFlex] Image simulation speed: " << el << " s" << std::endl;
     return msg;
 }
 
-std::vector<float> RadarCPURec::energy_to_decibel(
+std::vector<float> RadarCPUFlex::energy_to_decibel(
     float sent_energy,
     const std::vector<float>& range_returns,
     const std::vector<int>& range_counts) const
@@ -666,7 +648,7 @@ std::vector<float> RadarCPURec::energy_to_decibel(
 
 
 
-
+// TODO: Add something like this for motion distortion:
 // override this if desired
 
 // rm::Transform Tsm_angle_last = Tsm_last;

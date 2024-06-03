@@ -194,7 +194,7 @@ struct Receiver
     rm::Transform Tsm;
 
     // wave gen in sensor coordinates
-    WaveGenFunc sample_gen = []() -> std::vector<DirectedWave>{
+    InitSamplingFunc sample_func = []() -> std::vector<DirectedWave>{
         DirectedWave wave;
         wave.energy       =  1.0; //
         wave.polarization =  0.5;
@@ -205,13 +205,13 @@ struct Receiver
         return {wave};
     };
 
-    std::vector<DirectedWave> genSamples()
+    std::vector<DirectedWave> genSamples() const
     {
-        return sample_gen();
+        return sample_func();
     }
 
     // generates rays ready to shoot in map coordinates
-    std::vector<DirectedWave> genSamplesMap()
+    std::vector<DirectedWave> genSamplesMap() const
     {
         return ~Tsm * genSamples();
     }

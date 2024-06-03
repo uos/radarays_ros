@@ -144,7 +144,7 @@ install(TARGETS radarays
 if(RADARAYS_WITH_CPU)
     add_library(radarays_cpu
         src/radarays_ros/RadarCPU.cpp
-        src/radarays_ros/RadarCPURec.cpp
+        src/radarays_ros/RadarCPUFlex.cpp
     )
     add_dependencies(radarays_cpu 
         ${${PROJECT_NAME}_EXPORTED_TARGETS}
@@ -222,18 +222,18 @@ endif(RADARAYS_WITH_GPU)
 
 ### TEST NEW RECURSIVE
 if(RADARAYS_WITH_CPU)
-    add_executable(radar_simulator_recursive
-        src/radar_simulator_recursive.cpp
+    add_executable(radar_simulator_flex
+        src/radar_simulator_flex.cpp
     )
 
-    add_dependencies(radar_simulator_recursive 
+    add_dependencies(radar_simulator_flex 
         ${${PROJECT_NAME}_EXPORTED_TARGETS}
         ${catkin_EXPORTED_TARGETS}
         ${PROJECT_NAME}_gencfg
     )
 
     ## Specify libraries to link a library or executable target against
-    target_link_libraries(radar_simulator_recursive
+    target_link_libraries(radar_simulator_flex
         ${catkin_LIBRARIES}
         rmagine::core
         ${OpenCV_LIBS}

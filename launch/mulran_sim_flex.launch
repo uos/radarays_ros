@@ -5,22 +5,23 @@
 <arg name="gui" default="false" />
 <arg name="record" default="false" />
 <arg name="output_name" default="radarays_output" />
+<arg name="print_similarity" default="false" />
 
 
-<!-- <arg name="meshfile" default="/home/amock/datasets/kaist02_mesh_v6M_f11M.ply" /> -->
-<arg name="meshfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_mesh_lvr2.ply" />
+<arg name="meshfile" default="/home/amock/datasets/kaist02_mesh_v6M_f11M.ply" />
+<!-- <arg name="meshfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_mesh_lvr2.ply" /> -->
 
-<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist01_micp_lvr2.bag" /> -->
+<arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist01_micp_lvr2.bag" />
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist02_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist03_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc01_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc02_micp_lvr2.bag" /> -->
-<arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" />
+<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" /> -->
 
-<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_rec_dyncfg.yaml" />
+<arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_flex_dyncfg.yaml" />
 
 
-<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bagfile) -r $(arg rate) --pause" output="screen" />
+<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bagfile) -r $(arg rate) --pause" />
 
 
 
@@ -48,6 +49,15 @@
     <remap from="radar_image" to="/radar/image_gt" />
     <rosparam command="load" param="radar" file="$(find radarays_ros)/config/navtech_mulran.yaml" />
 </node>
+
+<group if="$(arg print_similarity)">
+    <node pkg="radar_tools" type="compare_radar_images.py" name="compare_radar_images" output="screen">
+        <param name="topic_in_1" value="/radar/image_gt" />
+        <param name="topic_in_2" value="/radar/image" />
+        <param name="topic_out" value="/real_to_sim_gap"/>
+        <param name="time_sync" value="virtual" />
+    </node>
+</group>
 
 <group if="$(arg record)">
     <node pkg="rosbag" type="record" name="rosbag_record" args="--regex '/radar/image(.*)' -O $(arg output_name)" />

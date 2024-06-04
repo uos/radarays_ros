@@ -228,7 +228,6 @@ struct Sender
     // energy_density function
     // wave: in sensor coordinates
     ReceiverFunc energy_density_func = [](const rm::Vector dir) -> float {
-        
         // const rm::Vector front = {1.0, 0.0, 0.0};
         // return front.dot(dir);
         return 1.0;

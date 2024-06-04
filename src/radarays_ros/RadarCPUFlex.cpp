@@ -595,13 +595,91 @@ sensor_msgs::ImagePtr RadarCPUFlex::simulate(
         // the more waves we have the more we trust our system
         // 1 wave -> 100 process noise added per pixel
         // 100 waves -> 1 process noise added per pixel
-        float process_noise = 100.0 / static_cast<float>(m_params.model.n_samples);
+        float process_noise = 1000.0 / static_cast<float>(
+            m_params.model.n_samples * m_cfg.signal_denoising_triangular_width);
         range_returns = blur_kalman(range_returns, range_counts, process_noise);
+        // range_returns = blur_blur(range_returns, range_counts, 5);
+        
+
         std::vector<float> decibels = energy_to_decibel(wave_init.energy, range_returns, range_counts);
 
         int col = (m_cfg.scroll_image + angle_id) % m_polar_image.cols;
         
         cv::Mat slice(decibels.size(), 1, CV_32FC1, decibels.data());
+
+
+        if(m_cfg.ambient_noise)
+        {
+            std::random_device                      rand_dev;
+            std::mt19937                            gen(rand_dev());
+            std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
+
+            
+            // apply noise
+            // low freq perlin
+            double scale = 0.05;
+            // high freq perlin
+            double scale2 = 0.2;
+
+            double random_begin = dist_uni(gen) * 1000.0;
+            
+            for(size_t i=0; i<slice.rows; i++)
+            {
+                float signal = slice.at<float>(i);
+
+                double p;
+
+                if(m_cfg.ambient_noise == 1) // UNIFORM
+                {
+                    p = dist_uni(gen);
+                } else if(m_cfg.ambient_noise == 2) // PERLIN
+                {
+                    double p_perlin1 = perlin_noise(
+                        random_begin + static_cast<double>(i) * scale, 
+                        static_cast<double>(col) * scale);
+                    
+                    double p_perlin2 = perlin_noise(
+                        random_begin + static_cast<double>(i) * scale2, 
+                        static_cast<double>(col) * scale2);
+
+                    p = 0.9 * p_perlin1 + 0.1 * p_perlin2;
+                }
+                
+                // p = p * 
+                // p = (p + 1.0) / 2.0; // [0.0-1.0]
+
+                // verwurschteltn
+                float signal_min = 0;
+                float signal_max = m_cfg.signal_max;
+                float signal_amp = signal_max - signal_min;
+
+                float signal_ = 1.0 - ((signal - signal_min) / signal_amp);
+
+                float noise_at_0 = signal_amp * m_cfg.ambient_noise_at_signal_0;
+                float noise_at_1 = signal_amp * m_cfg.ambient_noise_at_signal_1;
+
+                float signal__ = std::pow(signal_, 4.0);
+
+                float noise_amp = (signal__ * noise_at_0 + (1.0 - signal__) * noise_at_1);
+
+                // noise_amp * p * signal_max;
+                
+                float noise_energy_max = signal_max * m_cfg.ambient_noise_energy_max;
+                float noise_energy_min = signal_max * m_cfg.ambient_noise_energy_min;
+                float energy_loss = m_cfg.ambient_noise_energy_loss;
+
+                float y_noise = noise_amp * p;
+
+                float x = (static_cast<float>(i) + 0.5) * m_cfg.resolution;
+
+                y_noise = y_noise + (noise_energy_max - noise_energy_min) * exp(-energy_loss * x) + noise_energy_min;
+                y_noise = abs(y_noise);
+
+                slice.at<float>(i) = signal + y_noise;
+            }
+        }
+
+
         slice.convertTo(m_polar_image.col(col), CV_8UC1);
     }
 

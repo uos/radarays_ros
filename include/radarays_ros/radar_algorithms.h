@@ -492,9 +492,16 @@ inline std::vector<float> make_denoiser_maxwell_boltzmann(
 std::vector<float> blur(const std::vector<float>& energy);
 
 std::vector<float> blur_kalman(
-    const std::vector<float>& energy, 
+    const std::vector<float>& energies, 
     const std::vector<int>& counts,
     float process_noise = 1.0);
+
+
+std::vector<float> blur_blur(
+    const std::vector<float>& energies, 
+    const std::vector<int>& counts,
+    int width = 21);
+
 
 
 } // namespace radarays_ros

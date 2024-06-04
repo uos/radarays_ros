@@ -1,5 +1,6 @@
 #include "radarays_ros/radar_algorithms.h"
 
+#include <numeric>     
 
 namespace radarays_ros
 {
@@ -415,6 +416,7 @@ std::vector<float> blur_kalman(
 {
     std::vector<float> ret(energies.size(), 0.0);
 
+    // forward kalman filter
     float energy = energies[0];
     float energy_sigma = 1000.0;
 
@@ -433,6 +435,45 @@ std::vector<float> blur_kalman(
         energy = energy_ + K * (meas - energy_);
         energy_sigma = (1.0 - K) * energy_sigma_;
         ret[i] = energy;
+    }
+
+    return ret;
+}
+
+
+std::vector<float> blur_blur(
+    const std::vector<float>& energies, 
+    const std::vector<int>& counts,
+    int width)
+{
+    std::vector<float> ret(energies.size(), 0.0);
+
+    // auto result = std::reduce(v.begin(), v.end());
+    for(int tgt_id=0; tgt_id<energies.size(); tgt_id++)
+    {
+        int total_counts = 0;
+        float total_value = 0.0;
+
+        for(int mask_id=-width/2; mask_id<width/2; mask_id++)
+        {
+            const int src_id = tgt_id + mask_id;
+            if(src_id >= 0 && src_id < energies.size())
+            {
+                total_counts += counts[src_id];
+            }
+        }
+
+        for(int mask_id=-width/2; mask_id<width/2; mask_id++)
+        {
+            const int src_id = tgt_id + mask_id;
+            if(src_id >= 0 && src_id < energies.size() && total_counts > 0)
+            {
+                const float weight = static_cast<float>(counts[src_id]) / static_cast<float>(total_counts);
+                total_value += energies[src_id] * weight;
+            }
+        }
+
+        ret[tgt_id] = total_value;
     }
 
     return ret;

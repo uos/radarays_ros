@@ -223,6 +223,8 @@ void Radar::loadParams()
     m_params.materials = loadRadarMaterialsFromParameterServer(m_nh_p);
     m_nh_p->getParam("object_materials", m_object_materials);
     m_nh_p->getParam("material_id_air", m_material_id_air);
+
+    
 }
 
 

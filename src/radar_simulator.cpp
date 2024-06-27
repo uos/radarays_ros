@@ -167,6 +167,7 @@ void init_sim()
         #endif // defined RADARAYS_WITH_GPU
     }
 
+    radarays_sim->loadParams();
 }
 
 void run_radar_publisher()
@@ -215,7 +216,6 @@ void generate_radar_image_cb(const GenRadarImageGoalConstPtr &goal)
     std::cout << "Client requested for radar image. Producing result..." << std::endl;
     auto params = goal->params;
     radarays_sim->setParams(goal->params);
-    radarays_sim->loadParams();
     sensor_msgs::ImagePtr msg = radarays_sim->simulate(ros::Time(0));
     result_.polar_image = *msg;
     std::cout << "finished." << std::endl;
@@ -228,6 +228,7 @@ bool get_radar_params_cb(radarays_ros::GetRadarParams::Request &req,
 {
     if(radarays_sim)
     {
+        std::cout << "Return simulation parameters!" << std::endl;
         res.params = radarays_sim->getParams();
         return true;
     } else {

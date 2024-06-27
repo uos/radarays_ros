@@ -9,7 +9,7 @@
     <param name="map_frame" type="string" value="map" />
     <param name="sensor_frame" type="string" value="radar_polar" />
     # Load inital materials
-    <rosparam command="load" file="$(find radarays_ros)/config/mulran_kaist02.yaml" />
+    <rosparam command="load" file="$(find radarays_ros)/config/oru4.yaml" />
     <param name="node_mode" type="string" value="server" />
 </node>
 

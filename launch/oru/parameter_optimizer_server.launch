@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<launch>
+
+# This example shows how to start a simulation server that can be triggered by an python optimizer
+
+# Node that does the simulation
+<node pkg="radarays_ros" type="radar_simulator" name="radar_simulator" output="screen">
+    <param name="map_file" type="string" value="/home/amock/datasets/oru4.dae" />
+    <param name="map_frame" type="string" value="map" />
+    <param name="sensor_frame" type="string" value="radar_polar" />
+    # Load inital materials
+    <rosparam command="load" file="$(find radarays_ros)/config/mulran_kaist02.yaml" />
+    <param name="node_mode" type="string" value="server" />
+</node>
+
+<!-- # Node that optimizes the simulation parameters and compares the results to the real image
+<node pkg="radarays_ros" type="radaray_opti.py" name="radar_parameter_search" output="screen">
+</node> -->
+
+</launch>

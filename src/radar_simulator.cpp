@@ -58,7 +58,9 @@ namespace rm = rmagine;
 std::string map_frame = "map";
 std::string sensor_frame = "navtech";
 
+std::shared_ptr<ros::NodeHandle> nh;
 std::shared_ptr<ros::NodeHandle> nh_p;
+
 std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
@@ -171,13 +173,8 @@ void run_radar_publisher()
 {
     std::cout << "STARTING RADAR SIMULATOR" << std::endl;
 
-    ros::NodeHandle nh;
-    nh_p = std::make_shared<ros::NodeHandle>("~");
-
-    init_sim();
-
     // image transport
-    it = std::make_shared<image_transport::ImageTransport>(nh);
+    it = std::make_shared<image_transport::ImageTransport>(*nh);
     pub_polar = it->advertise("radar/image", 1);
 
     // pcl
@@ -189,12 +186,12 @@ void run_radar_publisher()
     if(nh_p->getParam("sync_topic", sync_topic))
     {
         std::cout << "SYNC SIMULATIONS WITH TOPIC " << sync_topic << std::endl;
-        ros::Subscriber sub = nh.subscribe<sensor_msgs::Image>(sync_topic, 1, sync_cb);
+        ros::Subscriber sub = nh->subscribe<sensor_msgs::Image>(sync_topic, 1, sync_cb);
         ros::spin();
     } else {
         // unsynced
         ros::Rate r(100);
-        while(nh.ok())
+        while(nh->ok())
         {
             radarays_sim->loadParams();
             sensor_msgs::ImagePtr msg = radarays_sim->simulate(ros::Time(0));
@@ -243,9 +240,6 @@ bool get_radar_params_cb(radarays_ros::GetRadarParams::Request &req,
 void run_radar_server()
 {
     std::cout << "STARTING RADAR SIMULATION SERVER" << std::endl;
-    ros::NodeHandle nh;
-    nh_p = std::make_shared<ros::NodeHandle>("~");
-    init_sim();
 
     // Start service server
     // can be used to receive current radar parameters
@@ -289,8 +283,23 @@ int main(int argc, char** argv)
 {
     ros::init(argc, argv, "radar_simulator");
     
-    // run_radar_publisher();
-    run_radar_server();
+    nh = std::make_shared<ros::NodeHandle>();
+    nh_p = std::make_shared<ros::NodeHandle>("~");
+    init_sim();
+
+    std::string node_mode;
+    nh_p->param<std::string>("node_mode", node_mode, "publisher");
+
+    if(node_mode == "publisher")
+    {
+        run_radar_publisher();
+    } else if(node_mode == "server") {
+        run_radar_server();
+    } else {
+        std::stringstream ss;
+        ss << "node_mode '" << node_mode << "' not known!"; 
+        throw std::runtime_error(ss.str());
+    }
     
     return 0;
 }

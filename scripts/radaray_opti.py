@@ -121,12 +121,15 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
 
     br = CvBridge()
 
-    # radar_real_msg = rospy.wait_for_message("/Navtech/Polar", Image)
-    # radar_real = br.imgmsg_to_cv2(radar_real_msg)
+    print("Wait for real message...")
+    radar_real_msg = rospy.wait_for_message("/Navtech/Polar", Image)
+    radar_real = br.imgmsg_to_cv2(radar_real_msg)
+
+    print("Got image", radar_real.shape)
 
     # cv2.imwrite("radar.png", radar_real)
 
-    radar_real = cv2.imread("radar.png", cv2.IMREAD_GRAYSCALE)
+    # radar_real = cv2.imread("radar.png", cv2.IMREAD_GRAYSCALE)
 
     # store image once
     
@@ -135,7 +138,7 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
     service_name = 'get_radar_params'
     action_name = 'gen_radar_image'
 
-
+    print("Get current simulation params")
     rospy.wait_for_service(server_node_name + "/" + service_name)
     try:
         get_radar_params = rospy.ServiceProxy(server_node_name + "/" + service_name, radarays_ros.srv.GetRadarParams)

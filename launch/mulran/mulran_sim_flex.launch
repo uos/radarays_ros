@@ -8,21 +8,19 @@
 <arg name="print_similarity" default="false" />
 
 
-<arg name="meshfile" default="/home/amock/datasets/kaist02_mesh_v6M_f11M.ply" />
-<!-- <arg name="meshfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_mesh_lvr2.ply" /> -->
+<!-- <arg name="meshfile" default="/home/amock/datasets/kaist02_mesh_v6M_f11M.ply" /> -->
+<arg name="meshfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_mesh_lvr2.ply" />
 
-<arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist01_micp_lvr2.bag" />
+<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist01_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist02_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/KAIST/mulran_kaist03_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc01_micp_lvr2.bag" /> -->
 <!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc02_micp_lvr2.bag" /> -->
-<!-- <arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" /> -->
+<arg name="bagfile" default="/home/amock/datasets/micp_mulran/DCC/mulran_dcc03_micp_lvr2.bag" />
 
 <arg name="radarparams" default="$(find radarays_ros)/cfg/mulran_kaist_flex_dyncfg.yaml" />
 
-
-<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bagfile) -r $(arg rate) --pause" />
-
+<node pkg="rosbag" type="play" name="rosbag_play" args="$(arg bagfile) -r $(arg rate) --pause" output="screen" />
 
 
 <node pkg="radarays_ros" type="radar_simulator_flex" name="radar_simulator_flex" output="screen">

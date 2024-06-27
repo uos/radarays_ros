@@ -63,22 +63,20 @@ std::shared_ptr<tf2_ros::Buffer> tf_buffer;
 std::shared_ptr<tf2_ros::TransformListener> tf_listener;
 ros::Publisher pub_pcl;
 image_transport::Publisher pub_polar;
+std::shared_ptr<image_transport::ImageTransport> it;
+
+
+// Specific for action server
+std::shared_ptr<actionlib::SimpleActionServer<GenRadarImageAction> > as_;
+GenRadarImageFeedback feedback_;
+GenRadarImageResult result_;
+
+
 
 RadarPtr radarays_sim;
 
 
-bool getRadarParamsCB(radarays_ros::GetRadarParams::Request  &req,
-         radarays_ros::GetRadarParams::Response &res)
-{
-    if(radarays_sim)
-    {
-        res.params = radarays_sim->getParams();
-        return true;
-    } else {
-        return false;
-    }
-    return true;
-}
+
 
 void sync_cb(const sensor_msgs::Image::ConstPtr& sync_msg)
 {
@@ -95,20 +93,12 @@ void sync_cb(const sensor_msgs::Image::ConstPtr& sync_msg)
     pub_polar.publish(msg);
 }
 
-int main_publisher(int argc, char** argv)
-{
-    ros::init(argc, argv, "radar_simulator");
-
-    std::cout << "STARTING RADAR SIMULATOR" << std::endl;
-
-    ros::NodeHandle nh;
-    nh_p = std::make_shared<ros::NodeHandle>("~");
-
-
+void init_sim()
+{   
     // setting up tf
     tf_buffer = std::make_shared<tf2_ros::Buffer>();
     tf_listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
-    
+
     std::string map_file;
     nh_p->getParam("map_file", map_file);
     nh_p->getParam("map_frame", map_frame);
@@ -133,13 +123,13 @@ int main_publisher(int argc, char** argv)
     if(use_gpu && !gpu_available)
     {
         std::cout << "Desired computing unit 'GPU' is not available on your system." << std::endl;
-        return 0;
+        throw std::runtime_error("Desired computing unit 'GPU' is not available on your system.");
     }
 
     if(!use_gpu && !cpu_available)
     {
         std::cout << "Desired computing unit 'CPU' is not available on your system." << std::endl;
-        return 0;
+        throw std::runtime_error("Desired computing unit 'CPU' is not available on your system.");
     }
     
     if(!use_gpu)
@@ -175,14 +165,24 @@ int main_publisher(int argc, char** argv)
         #endif // defined RADARAYS_WITH_GPU
     }
 
+}
+
+void run_radar_publisher()
+{
+    std::cout << "STARTING RADAR SIMULATOR" << std::endl;
+
+    ros::NodeHandle nh;
+    nh_p = std::make_shared<ros::NodeHandle>("~");
+
+    init_sim();
+
     // image transport
-    image_transport::ImageTransport it(nh);
-    pub_polar = it.advertise("radar/image", 1);
+    it = std::make_shared<image_transport::ImageTransport>(nh);
+    pub_polar = it->advertise("radar/image", 1);
 
     // pcl
     pub_pcl = nh_p->advertise<sensor_msgs::PointCloud>("radar/pcl_real", 1);
-
-
+    
 
     std::string sync_topic = "";
 
@@ -191,7 +191,6 @@ int main_publisher(int argc, char** argv)
         std::cout << "SYNC SIMULATIONS WITH TOPIC " << sync_topic << std::endl;
         ros::Subscriber sub = nh.subscribe<sensor_msgs::Image>(sync_topic, 1, sync_cb);
         ros::spin();
-
     } else {
         // unsynced
         ros::Rate r(100);
@@ -211,14 +210,87 @@ int main_publisher(int argc, char** argv)
             r.sleep();
         }
     }
-    
-    return 0;
 }
 
 
+void generate_radar_image_cb(const GenRadarImageGoalConstPtr &goal)
+{
+    std::cout << "Client requested for radar image. Producing result..." << std::endl;
+    auto params = goal->params;
+    radarays_sim->setParams(goal->params);
+    radarays_sim->loadParams();
+    sensor_msgs::ImagePtr msg = radarays_sim->simulate(ros::Time(0));
+    result_.polar_image = *msg;
+    std::cout << "finished." << std::endl;
+    as_->setSucceeded(result_);
+}
+
+
+bool get_radar_params_cb(radarays_ros::GetRadarParams::Request &req,
+         radarays_ros::GetRadarParams::Response &res)
+{
+    if(radarays_sim)
+    {
+        res.params = radarays_sim->getParams();
+        return true;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+
+void run_radar_server()
+{
+    std::cout << "STARTING RADAR SIMULATION SERVER" << std::endl;
+    ros::NodeHandle nh;
+    nh_p = std::make_shared<ros::NodeHandle>("~");
+    init_sim();
+
+    // Start service server
+    // can be used to receive current radar parameters
+    // - in this case it is mainly used to receive the current parameters to make small changes
+    ros::ServiceServer service = nh_p->advertiseService("get_radar_params", get_radar_params_cb);
+
+    // Start action server
+    std::string action_name = "gen_radar_image";
+    as_ = std::make_shared<actionlib::SimpleActionServer<GenRadarImageAction> >(
+        *nh_p, action_name, generate_radar_image_cb, false
+    );
+
+    as_->start();
+
+    ros::Rate r(100);
+    ros::Time tp = ros::Time::now();
+
+    while(ros::ok())
+    {
+        r.sleep();
+        ros::spinOnce();
+        auto tc = ros::Time::now();
+        if(tc < tp)
+        {
+            // jump back in time
+            std::cout << "Jump back in time detected" << std::endl;
+            ros::Duration(2.0).sleep();
+            as_->shutdown();
+            as_ = std::make_shared<actionlib::SimpleActionServer<GenRadarImageAction> >(
+                *nh_p, action_name, generate_radar_image_cb, false
+            );
+            as_->start();
+            ros::Duration(2.0).sleep();
+        }
+
+        tp = tc;
+    }
+}
 
 int main(int argc, char** argv)
 {
-    // return main_action_server(argc, argv);
-    return main_publisher(argc, argv);
+    ros::init(argc, argv, "radar_simulator");
+    
+    // run_radar_publisher();
+    run_radar_server();
+    
+    return 0;
 }

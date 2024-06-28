@@ -32,6 +32,10 @@ from scipy.optimize import minimize
 
 from scipy import optimize
 
+from matplotlib import pyplot as plt
+from tqdm import tqdm
+import itertools
+
 
 
 def to_param_vec(params : radarays_ros.msg.RadarParams):
@@ -93,6 +97,8 @@ def vec_to_params(params_init : radarays_ros.msg.RadarParams, param_vec):
 
     offset_materials = 2
 
+    # optimize wall and glass parameter
+
     # 1: wall, 3: glass
     params_out.materials.data[1].velocity = param_vec[offset_materials + 0 * 4 + 0]
     params_out.materials.data[1].ambient  = param_vec[offset_materials + 0 * 4 + 1]
@@ -112,30 +118,144 @@ def vec_to_params(params_init : radarays_ros.msg.RadarParams, param_vec):
 
     return params_out
     
+def grid_search(func, bounds, N):
+
+    search_spaces = []
+    for i in range(len(bounds)):
+        search_spaces.append(np.linspace(bounds[0][0], bounds[0][1], N))
+
+    best_permutation = None
+    best_params = None
+    best_score = 10000.0
+
+    for permutation in itertools.product(range(N), repeat=len(bounds)):
+        print(permutation)
+
+        params = []
+
+        for i,v in enumerate(permutation):
+            params.append(search_spaces[i][v])
+
+        params = np.array(params)
+        score = func(params)
+
+        if score < best_score:
+            best_score = score
+            best_permutation = permutation
+            best_params = params
+
+            print("New best found:")
+            print("- permutation:", best_permutation)
+            print("- params:", best_params)
+            print("- score:", best_score)
+
+
+    return best_params, best_score
+    
+client = None
+br = None
+service_name = 'get_radar_params'
+action_name = 'gen_radar_image'
+
+    
+def simulate_image(params):
+    global client, br
+
+    goal = radarays_ros.msg.GenRadarImageGoal(params=params)
+
+    polar_image = None
+
+    while polar_image is None:
+        # Sends the goal to the action server.
+        client.send_goal(goal)
+
+        # Waits for the server to finish performing the action.
+        got_result = client.wait_for_result(timeout = rospy.Duration(5.0))
+        
+        if got_result:
+            res = client.get_result()
+            
+            if not res is None:
+
+                try:
+                    polar_image = br.imgmsg_to_cv2(res.polar_image)
+                except cv_bridge.core.CvBridgeError as ex:
+                    print(res.polar_image)
+                    print(ex)
+
+                if len(polar_image.data) == 0:
+                    # waited too long
+                    connected = False
+                    while not connected:
+                        print("Reconnect due to wrong data")
+                        client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
+                        connected = client.wait_for_server(timeout= rospy.Duration(2.0))
+                    polar_image = None
+            else:
+                # waited too long
+                connected = False
+                while not connected:
+                    print("Reconnect due to wrong response")
+                    client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
+                    connected = client.wait_for_server(timeout= rospy.Duration(2.0))
+                polar_image = None
+
+        else:
+            # waited too long
+            connected = False
+            while not connected:
+                print("Reconnect due to missing goal return")
+                client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
+                connected = client.wait_for_server(timeout= rospy.Duration(2.0))
+            polar_image = None
+
+    return polar_image
+
+def image_gen_and_compare(param_vec, params_init, real_image, objective_func, info={"iteration":0}):
+    """Objective function"""
+    iteration = info["iteration"]
+
+    params = vec_to_params(params_init, param_vec)
+    polar_image = simulate_image(params)
+    score = objective_func(real_image, polar_image)
+
+    if iteration % 100 == 0:
+        print("Iteration: %d" % iteration)
+        print("- params:")
+        print(params)
+        print("- score:", score)
+
+    iteration += 1
+    info["iteration"] = iteration
+
+    return score
 
 def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
-
+    global client, br
+    
     # next step: get rid of bag file
     # - Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
     # - 
 
     br = CvBridge()
 
-    # radar_real_msg = rospy.wait_for_message("/Navtech/Polar", Image)
-    # radar_real = br.imgmsg_to_cv2(radar_real_msg)
+    print("Wait for real message...")
+    radar_real_msg = rospy.wait_for_message("/Navtech/Polar", Image)
+    radar_real = br.imgmsg_to_cv2(radar_real_msg)
+
+    print("Got image", radar_real.shape)
 
     # cv2.imwrite("radar.png", radar_real)
 
-    radar_real = cv2.imread("radar.png", cv2.IMREAD_GRAYSCALE)
+    # radar_real = cv2.imread("radar.png", cv2.IMREAD_GRAYSCALE)
 
     # store image once
     
     get_radar_params = None
 
-    service_name = 'get_radar_params'
-    action_name = 'gen_radar_image'
+    
 
-
+    print("Get current simulation params")
     rospy.wait_for_service(server_node_name + "/" + service_name)
     try:
         get_radar_params = rospy.ServiceProxy(server_node_name + "/" + service_name, radarays_ros.srv.GetRadarParams)
@@ -149,8 +269,10 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
 
     print(params)
     param_vec, bounds = to_param_vec(params)
+
     print("param dim:", param_vec.shape)
 
+    print("Bounds:")
     print(bounds)
 
     # override bounds
@@ -169,62 +291,26 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
 
     print("Connected to Action Server.")
 
-    iter = 0
-
-    def image_gen_and_compare(param_vec, client, params, real_image, info={"iteration":0}):
-        """Objective function"""
-
-        params = vec_to_params(params, param_vec)
-        goal = radarays_ros.msg.GenRadarImageGoal(params=params)
-
-        polar_image = None
-
-        while polar_image is None:
-            # Sends the goal to the action server.
-            client.send_goal(goal)
-
-            # Waits for the server to finish performing the action.
-            client.wait_for_result()
-            res = client.get_result()
-            
-            try:
-                polar_image = br.imgmsg_to_cv2(res.polar_image)
-            except cv_bridge.core.CvBridgeError as ex:
-                print(res.polar_image)
-                print(ex)
-
-            if len(polar_image.data) == 0:
-                print("Reconnect")
-                client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
-
-                # Waits until the action server has started up and started
-                # listening for goals.
-                client.wait_for_server()
-                polar_image = None
-
-        psnr = -peak_signal_noise_ratio(real_image, polar_image)
-
-        iteration = info["iteration"]
-
-        if iteration % 100 == 0:
-            print("Iteration: %d" % iteration)
-            print("- params:")
-            print(params)
-            print("- psnr:", psnr)
-        
-        iteration += 1
-        info["iteration"] = iteration
-        return psnr
-
     options={'disp': True}
 
-    res = optimize.shgo(image_gen_and_compare,
-        bounds,
-        args=(client, params, radar_real),
-        options=options
-    )
+    objective_func = lambda real, sim: -mutual_info_score(real.flatten(), sim.flatten())
+    func = lambda x: image_gen_and_compare(x, client, params, radar_real, objective_func)
 
-    print(res)
+
+     # do one test
+    polar_image = simulate_image(params)
+    score = objective_func(radar_real, polar_image)
+
+    print("Test score:", score)
+
+    plt.imshow(polar_image)
+    plt.show()
+
+    best_params, best_score = grid_search(func, bounds, 10)
+
+    print("Result")
+    print("- params:", best_params)
+    print("- score:", best_score)
 
     return res
 

@@ -4,42 +4,33 @@
 # modeling two things:
 # - refraction direction
 # - how much percentage is transmitted or reflected? (fresnel)
-velocities: [
-  0.3,    # 0: air
-  0.001,   # 1: wall stone      # unsure
-  0.002,    # 2: shelf wood      # unsure
-  0.05,    # 3: window glass    # unsure 
-  0.0,    # 4: metal           # unsure
-  0.0     # 5: test
-]
+materials:
+  # 0: air
+  - velocity: 0.3
+    ambient:  0.5
+    diffuse:  0.1
+    specular: 0.1
+  # 1: wall stone
+  - velocity: 0.001
+    ambient:  0.6
+    diffuse:  0.3
+    specular: 30.0
+  # 2: shelf wood
+  - velocity: 0.002
+    ambient:  0.6
+    diffuse:  0.3
+    specular: 70.0
+  # 3: window glass
+  - velocity: 0.05
+    ambient:  0.01
+    diffuse:  0.04
+    specular: 2000.0
+  # 4: metal
+  - velocity: 0.0
+    ambient:  1.0
+    diffuse:  1.0
+    specular: 2000.0
 
-# 
-ambient: [
-  0.5,   # 0: air
-  0.6,   # 1: wall stone
-  0.6,   # 2: shelf wood
-  0.01,  # 3: window glass 
-  1.0,   # 4: metal       
-  1.0    # 5: test
-]
-
-diffuse: [
-  0.1,   # 0: air
-  0.3,   # 1: wall stone
-  0.3,   # 2: shelf wood   
-  0.04,   # 3: window glass
-  1.0,   # 4: metal   
-  0.0    # 5: test
-]
-
-specular: [
-  0.1,   # 0: air
-  30.0,   # 1: wall stone
-  70.0,   # 15: shelf wood 
-  2000.0,   # 14: window glass 
-  2000.0,   # 13: metal 
-  0.0    # 12: test
-]
 
 material_id_air: 0
 

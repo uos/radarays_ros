@@ -38,7 +38,19 @@ import itertools
 
 
 
+score_file = None
+
+
+# extract parameters to optimize
+# - radarays -> scipy - to_param_vec
+# - scipy -> radarays - vec_to_params
+
+# in this example we optimize
+
 def to_param_vec(params : radarays_ros.msg.RadarParams):
+
+    # define which parameters are optimized here (and in vec_to_params functions)
+
     param_vec = []
     bounds = []
     param_vec.append(params.model.beam_width)
@@ -119,6 +131,7 @@ def vec_to_params(params_init : radarays_ros.msg.RadarParams, param_vec):
     return params_out
     
 def grid_search(func, bounds, N):
+    global score_file
 
     search_spaces = []
     for i in range(len(bounds)):
@@ -144,11 +157,11 @@ def grid_search(func, bounds, N):
             best_permutation = permutation
             best_params = params
 
+            file_entry = "permutation: " + str(best_permutation) + ", params: " + str(best_params) + ", score: " + str(best_score) 
             print("New best found:")
-            print("- permutation:", best_permutation)
-            print("- params:", best_params)
-            print("- score:", best_score)
-
+            print(file_entry)
+            score_file.write(file_entry + "\n")
+            score_file.flush()
 
     return best_params, best_score
     
@@ -157,15 +170,21 @@ br = None
 service_name = 'get_radar_params'
 action_name = 'gen_radar_image'
 
-    
+
 def simulate_image(params):
     global client, br
 
     goal = radarays_ros.msg.GenRadarImageGoal(params=params)
 
-    polar_image = None
 
+
+    polar_image = None
     while polar_image is None:
+
+        if rospy.is_shutdown():
+            score_file.close()
+            exit()
+
         # Sends the goal to the action server.
         client.send_goal(goal)
 
@@ -176,7 +195,6 @@ def simulate_image(params):
             res = client.get_result()
             
             if not res is None:
-
                 try:
                     polar_image = br.imgmsg_to_cv2(res.polar_image)
                 except cv_bridge.core.CvBridgeError as ex:
@@ -186,7 +204,7 @@ def simulate_image(params):
                 if len(polar_image.data) == 0:
                     # waited too long
                     connected = False
-                    while not connected:
+                    while not connected and not rospy.is_shutdown():
                         print("Reconnect due to wrong data")
                         client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
                         connected = client.wait_for_server(timeout= rospy.Duration(2.0))
@@ -194,7 +212,7 @@ def simulate_image(params):
             else:
                 # waited too long
                 connected = False
-                while not connected:
+                while not connected and not rospy.is_shutdown():
                     print("Reconnect due to wrong response")
                     client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
                     connected = client.wait_for_server(timeout= rospy.Duration(2.0))
@@ -203,7 +221,7 @@ def simulate_image(params):
         else:
             # waited too long
             connected = False
-            while not connected:
+            while not connected and not rospy.is_shutdown():
                 print("Reconnect due to missing goal return")
                 client = actionlib.SimpleActionClient(server_node_name + "/" + action_name, radarays_ros.msg.GenRadarImageAction)
                 connected = client.wait_for_server(timeout= rospy.Duration(2.0))
@@ -231,8 +249,9 @@ def image_gen_and_compare(param_vec, params_init, real_image, objective_func, in
     return score
 
 def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
-    global client, br
+    global client, br, score_file
     
+    score_file = open("scores.txt", "a")
     # next step: get rid of bag file
     # - Tsm: T[v[0.863185,-1.164,1.49406], E[0.0149786, 0.00858233, 3.04591]]
     # - 
@@ -246,14 +265,10 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
     print("Got image", radar_real.shape)
 
     # cv2.imwrite("radar.png", radar_real)
-
     # radar_real = cv2.imread("radar.png", cv2.IMREAD_GRAYSCALE)
 
     # store image once
-    
     get_radar_params = None
-
-    
 
     print("Get current simulation params")
     rospy.wait_for_service(server_node_name + "/" + service_name)
@@ -294,23 +309,23 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
     options={'disp': True}
 
     objective_func = lambda real, sim: -mutual_info_score(real.flatten(), sim.flatten())
-    func = lambda x: image_gen_and_compare(x, client, params, radar_real, objective_func)
+    func = lambda x: image_gen_and_compare(x, params, radar_real, objective_func)
 
-
-     # do one test
+    # do one test
     polar_image = simulate_image(params)
     score = objective_func(radar_real, polar_image)
-
     print("Test score:", score)
 
-    plt.imshow(polar_image)
-    plt.show()
+    # plt.imshow(polar_image)
+    # plt.show()
 
     best_params, best_score = grid_search(func, bounds, 10)
 
     print("Result")
     print("- params:", best_params)
     print("- score:", best_score)
+
+    score_file.close()
 
     return res
 

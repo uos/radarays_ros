@@ -105,7 +105,7 @@ def vec_to_params(params_init : radarays_ros.msg.RadarParams, param_vec):
     
     params_out.model.beam_width = param_vec[0]
     # params_out.model.n_samples = int(param_vec[1])
-    params_out.model.n_reflections = int(param_vec[2] + 0.5)
+    params_out.model.n_reflections = int(param_vec[1] + 0.5)
 
     offset_materials = 2
 
@@ -278,14 +278,19 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
         print("Service call failed: %s"%e)
 
     resp = get_radar_params()
-    params = resp.params
+    params_init = resp.params
 
     print("Done fetching initial parameters.")
 
-    print(params)
-    param_vec, bounds = to_param_vec(params)
-
-    print("param dim:", param_vec.shape)
+    
+    # transform into optimizable representation and extract 
+    # only parameters that needs to be optimized
+    param_vec_init, bounds = to_param_vec(params_init)
+    
+    print("Initial Parameters:")
+    print(params_init)
+    print("-- Extracted parameters of interest (to be optimized):")
+    print(param_vec_init)
 
     print("Bounds:")
     print(bounds)
@@ -312,19 +317,24 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
     func = lambda x: image_gen_and_compare(x, params, radar_real, objective_func)
 
     # do one test
-    polar_image = simulate_image(params)
-    score = objective_func(radar_real, polar_image)
-    print("Test score:", score)
 
-    # plt.imshow(polar_image)
-    # plt.show()
+    for i in range(1):
+        params = vec_to_params(params_init, param_vec_init)
+        print(params)
+        polar_image = simulate_image(params)
+        score = objective_func(radar_real, polar_image)
+        print("Test score:", score)
 
-    best_params, best_score = grid_search(func, bounds, 10)
+    plt.imshow(polar_image)
+    plt.show()
 
+    print("optimize locally")
+    res = minimize(func, param_vec_init, method='Nelder-Mead', options=options)
+
+    # best_params, best_score = grid_search(func, bounds, 10)
     print("Result")
     print("- params:", best_params)
     print("- score:", best_score)
-
     score_file.close()
 
     return res

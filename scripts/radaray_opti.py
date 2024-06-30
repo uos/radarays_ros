@@ -53,12 +53,12 @@ def to_param_vec(params : radarays_ros.msg.RadarParams):
 
     param_vec = []
     bounds = []
-    param_vec.append(params.model.beam_width)
-    bounds.append((0.01, 20.0))
+    #param_vec.append(params.model.beam_width)
+    #bounds.append((0.01, 20.0))
     # param_vec.append(params.model.n_samples)
     # bounds.append((0.0, 1000.0))
-    param_vec.append(params.model.n_reflections)
-    bounds.append((0.0, 6.0))
+    #param_vec.append(params.model.n_reflections)
+    #bounds.append((0.0, 6.0))
 
     # wall
     mat = params.materials.data[1]
@@ -82,8 +82,6 @@ def to_param_vec(params : radarays_ros.msg.RadarParams):
     param_vec.append(mat.specular)
     bounds.append((0.0, 5000.0))
 
-
-
     # for i, mat in enumerate(params.materials.data):
     #     # param_vec.append(mat.velocity)
     #     if i == 0:
@@ -103,11 +101,11 @@ def to_param_vec(params : radarays_ros.msg.RadarParams):
 def vec_to_params(params_init : radarays_ros.msg.RadarParams, param_vec):
     params_out = params_init
     
-    params_out.model.beam_width = param_vec[0]
+    # params_out.model.beam_width = param_vec[0]
     # params_out.model.n_samples = int(param_vec[1])
-    params_out.model.n_reflections = int(param_vec[1] + 0.5)
+    # params_out.model.n_reflections = int(param_vec[1] + 0.5)
 
-    offset_materials = 2
+    offset_materials = 0
 
     # optimize wall and glass parameter
 
@@ -325,13 +323,14 @@ def radaray_opti(server_node_name = "radar_simulator", override_bounds = {}):
         score = objective_func(radar_real, polar_image)
         print("Test score:", score)
 
-    plt.imshow(polar_image)
-    plt.show()
+    # plt.imshow(polar_image)
+    # plt.show()
 
-    print("optimize locally")
-    res = minimize(func, param_vec_init, method='Nelder-Mead', options=options)
+    # print("optimize locally")
+    # res = minimize(func, param_vec_init, method='Nelder-Mead', options=options)
 
-    # best_params, best_score = grid_search(func, bounds, 10)
+    print("optimize globally")
+    best_params, best_score = grid_search(func, bounds, 5)
     print("Result")
     print("- params:", best_params)
     print("- score:", best_score)

@@ -63,3 +63,15 @@ Please reference the following papers when using RadaRays in your scientific wor
 
 - [ ] Put every non-ROS component to C++ only repository ([`https://github.com/uos/radarays`](https://github.com/uos/radarays)) for better reusage for non-ROS projects.
 
+
+## Development
+
+There are currently the following active development tracks on individual branches:
+
+1. [dev/flex](https://github.com/uos/radarays_ros/tree/dev/flex)
+    - flexible reflection models for rapid prototyping (CPU-only)
+    - Video for Cook-Torrance reflection model: https://www.youtube.com/watch?v=PI5j87NQzmk
+2. [dev/opti](https://github.com/uos/radarays_ros/tree/dev/opti)
+    - automatic material property optimization using the standard RadaRays simulation model
+
+Individual components of these development branches are transferred to the main branch after extensive testing.

@@ -52,8 +52,20 @@ rosrun radaray_ros radarays_snell_fresnel_brdf.py
 
 Please reference the following papers when using RadaRays in your scientific work.
 
-- Title: "RadaRays: Real-time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-accelerated Ray Tracing"
-- Preprint: https://arxiv.org/abs/2310.03505
+```bib
+@article{mock2025radarays,
+  author={Mock, Alexander and Magnusson, Martin and Hertzberg, Joachim},
+  journal={IEEE Robotics and Automation Letters}, 
+  title={{RadaRays}: Real-Time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-Accelerated Ray Tracing}, 
+  year={2025},
+  volume={10},
+  number={3},
+  pages={2470-2477},
+  doi={10.1109/LRA.2025.3531689}
+}
+```
+
+The paper is available on [IEEE Xplore](https://ieeexplore.ieee.org/abstract/document/10845807) and as preprint on [arXiv](https://arxiv.org/abs/2310.03505).
 
 ## Radarays Plugins
 

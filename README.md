@@ -56,7 +56,7 @@ Please reference the following papers when using RadaRays in your scientific wor
 @article{mock2025radarays,
   author={Mock, Alexander and Magnusson, Martin and Hertzberg, Joachim},
   journal={IEEE Robotics and Automation Letters}, 
-  title={{RadaRays}: Real-Time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-Accelerated Ray Tracing}, 
+  title={RadaRays: Real-Time Simulation of Rotating FMCW Radar for Mobile Robotics via Hardware-Accelerated Ray Tracing}, 
   year={2025},
   volume={10},
   number={3},

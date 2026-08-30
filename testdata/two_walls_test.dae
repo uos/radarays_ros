@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+Synthetic 2-object scene for exercising multi-material optimizer tuning
+(radaray_opti.py --material-indices). Two thin walls at known, distinct
+ranges from the sensor origin, same box topology as testdata/wall_test.ply
+(8 verts, 12 tris) but as two separate COLLADA <node>/<geometry> pairs so
+Assimp produces two aiMesh entries -> rmagine's make_embree_scene()
+(EmbreeScene.cpp, get_nodes_with_meshes()) instantiates each as its own
+scene-level geometry, so each gets its own obj_id at ray-hit time in
+document/node order: WallNear -> obj_id 0, WallFar -> obj_id 1. See
+testdata/two_walls_test_materials.yaml for the object_materials mapping
+that assigns a distinct material to each.
+
+WallNear: x in [5.0, 5.2]  (same position as wall_test.ply, for comparability)
+WallFar:  x in [9.0, 9.2]
+Both: y in [-2.0, 2.0], z in [0.0, 2.0].
+-->
+<COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
+  <asset>
+    <up_axis>Z_UP</up_axis>
+  </asset>
+  <library_geometries>
+    <geometry id="WallNear-mesh" name="WallNear">
+      <mesh>
+        <source id="WallNear-mesh-positions">
+          <float_array id="WallNear-mesh-positions-array" count="24">
+            5.0 -2.0 0.0  5.0 2.0 0.0  5.0 2.0 2.0  5.0 -2.0 2.0
+            5.2 -2.0 0.0  5.2 2.0 0.0  5.2 2.0 2.0  5.2 -2.0 2.0
+          </float_array>
+          <technique_common>
+            <accessor source="#WallNear-mesh-positions-array" count="8" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="WallNear-mesh-vertices">
+          <input semantic="POSITION" source="#WallNear-mesh-positions"/>
+        </vertices>
+        <triangles count="12">
+          <input semantic="VERTEX" source="#WallNear-mesh-vertices" offset="0"/>
+          <p>0 1 2  0 2 3  4 6 5  4 7 6  0 4 5  0 5 1  3 2 6  3 6 7  0 3 7  0 7 4  1 5 6  1 6 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+    <geometry id="WallFar-mesh" name="WallFar">
+      <mesh>
+        <source id="WallFar-mesh-positions">
+          <float_array id="WallFar-mesh-positions-array" count="24">
+            9.0 -2.0 0.0  9.0 2.0 0.0  9.0 2.0 2.0  9.0 -2.0 2.0
+            9.2 -2.0 0.0  9.2 2.0 0.0  9.2 2.0 2.0  9.2 -2.0 2.0
+          </float_array>
+          <technique_common>
+            <accessor source="#WallFar-mesh-positions-array" count="8" stride="3">
+              <param name="X" type="float"/>
+              <param name="Y" type="float"/>
+              <param name="Z" type="float"/>
+            </accessor>
+          </technique_common>
+        </source>
+        <vertices id="WallFar-mesh-vertices">
+          <input semantic="POSITION" source="#WallFar-mesh-positions"/>
+        </vertices>
+        <triangles count="12">
+          <input semantic="VERTEX" source="#WallFar-mesh-vertices" offset="0"/>
+          <p>0 1 2  0 2 3  4 6 5  4 7 6  0 4 5  0 5 1  3 2 6  3 6 7  0 3 7  0 7 4  1 5 6  1 6 2</p>
+        </triangles>
+      </mesh>
+    </geometry>
+  </library_geometries>
+  <library_visual_scenes>
+    <visual_scene id="Scene" name="Scene">
+      <node id="WallNear" name="WallNear" type="NODE">
+        <instance_geometry url="#WallNear-mesh"/>
+      </node>
+      <node id="WallFar" name="WallFar" type="NODE">
+        <instance_geometry url="#WallFar-mesh"/>
+      </node>
+    </visual_scene>
+  </library_visual_scenes>
+  <scene>
+    <instance_visual_scene url="#Scene"/>
+  </scene>
+</COLLADA>

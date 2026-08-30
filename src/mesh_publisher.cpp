@@ -1,172 +1,155 @@
-#include <ros/ros.h>
-
-#include <mesh_msgs/MeshGeometry.h>
-#include <mesh_msgs/MeshGeometryStamped.h>
-#include <mesh_msgs/TriangleIndices.h>
+// ROS 2 port of the ROS 1 mesh_publisher, deliberately NOT a 1:1 message
+// port. The original published mesh_msgs/MeshGeometryStamped, meant to be
+// viewed via RViz1's rviz_map_plugin/mesh_tools -- neither mesh_msgs nor
+// that plugin has a ROS 2 release (see MIGRATION.md, "mesh_publisher.cpp").
+// This publishes the same mesh data as a visualization_msgs/MarkerArray
+// (TRIANGLE_LIST per mesh) instead -- RViz2 renders that natively, no
+// extra plugin or external dependency needed, using the same pattern
+// ray_reflection_test.cpp already uses for its own Marker publishing.
+#include <rclcpp/rclcpp.hpp>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <geometry_msgs/msg/point.hpp>
+#include <std_msgs/msg/header.hpp>
 
 #include <rmagine/map/EmbreeMap.hpp>
 
 using namespace rmagine;
-
 namespace rm = rmagine;
 
-rm::Transform pre_transform;
-
-mesh_msgs::MeshGeometry embreeToRos(EmbreeMeshPtr mesh, Matrix4x4 T)
+namespace
 {
-    mesh_msgs::MeshGeometry mesh_ros;
 
-    // Vertices
+rm::Transform pre_transform = rm::Transform::Identity();
+
+void appendMeshTriangles(
+    visualization_msgs::msg::Marker& marker,
+    EmbreeMeshPtr mesh,
+    const rm::Matrix4x4& T)
+{
     auto vertices = mesh->verticesTransformed();
-    for(int i=0; i<vertices.size(); i++)
-    {
-        geometry_msgs::Point vertex_ros;
-        // mesh->ver
-        auto vt = T * vertices[i];
-        vertex_ros.x = vt.x;
-        vertex_ros.y = vt.y;
-        vertex_ros.z = vt.z;
-        mesh_ros.vertices.push_back(vertex_ros);
-    }
-
-    // Faces
     auto faces = mesh->faces();
-    for(int i=0; i<faces.size(); i++)
-    {
-        mesh_msgs::TriangleIndices face_ros;
-        face_ros.vertex_indices[0] = faces[i].v0;
-        face_ros.vertex_indices[1] = faces[i].v1;
-        face_ros.vertex_indices[2] = faces[i].v2;
-        mesh_ros.faces.push_back(face_ros);
-    }
 
-    return mesh_ros;
+    for(size_t i = 0; i < faces.size(); i++)
+    {
+        const auto& face = faces[i];
+        for(unsigned int v : {face.v0, face.v1, face.v2})
+        {
+            auto vt = T * vertices[v];
+            geometry_msgs::msg::Point p;
+            p.x = vt.x;
+            p.y = vt.y;
+            p.z = vt.z;
+            marker.points.push_back(p);
+        }
+    }
 }
 
-std::unordered_map<unsigned int, mesh_msgs::MeshGeometry> embreeToRos(
-    EmbreeScenePtr scene, 
-    Matrix4x4 T = Matrix4x4::Identity())
+// Walks the scene graph the same way the ROS 1 original did (nested
+// EmbreeInstances compose their transform into their children), appending
+// one Marker per leaf mesh to `markers`.
+void collectMarkers(
+    EmbreeScenePtr scene,
+    const rm::Matrix4x4& T,
+    const std_msgs::msg::Header& header,
+    visualization_msgs::msg::MarkerArray& markers)
 {
-    std::unordered_map<unsigned int, mesh_msgs::MeshGeometry> ret;
+    const rm::Matrix4x4 pre_transform_matrix = rm::compose(pre_transform, rm::Vector3{1.0, 1.0, 1.0});
 
     for(auto elem : scene->geometries())
     {
-        size_t geom_id = elem.first;
         EmbreeInstancePtr inst = std::dynamic_pointer_cast<EmbreeInstance>(elem.second);
         if(inst)
         {
-            rm::Matrix4x4 M = rm::compose(pre_transform, rm::Vector3{1.0, 1.0, 1.0});
-            Matrix4x4 T_ = T * M * inst->matrix();
-            std::cout << "instance: " << inst->name << std::endl;
-
-            auto ret_ = embreeToRos(inst->scene(), T_);
-            ret.insert(ret_.begin(), ret_.end());
-        } else {
-            EmbreeMeshPtr mesh = std::dynamic_pointer_cast<EmbreeMesh>(elem.second);
-            
-            if(mesh)
-            {
-                unsigned int mesh_id = mesh->id(scene);
-                std::cout << "mesh " << mesh_id << ": " << mesh->name << std::endl;
-                // leaf
-                // rm::Matrix4x4 pre_transform_matrix = (rm::Matrix4x4)pre_transform;
-                rm::Matrix4x4 M = rm::compose(pre_transform, rm::Vector3{1.0, 1.0, 1.0});
-                ret[mesh_id] = embreeToRos(mesh, T * M);
-            }
+            collectMarkers(inst->scene(), T * pre_transform_matrix * inst->matrix(), header, markers);
+            continue;
         }
-    }
 
-    return ret;
+        EmbreeMeshPtr mesh = std::dynamic_pointer_cast<EmbreeMesh>(elem.second);
+        if(!mesh)
+        {
+            continue;
+        }
+
+        visualization_msgs::msg::Marker marker;
+        marker.header = header;
+        marker.ns = "mesh";
+        marker.id = static_cast<int>(elem.first);
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.type = visualization_msgs::msg::Marker::TRIANGLE_LIST;
+        marker.pose.orientation.w = 1.0;
+        marker.scale.x = 1.0;
+        marker.scale.y = 1.0;
+        marker.scale.z = 1.0;
+        marker.color.r = 0.6;
+        marker.color.g = 0.6;
+        marker.color.b = 0.65;
+        marker.color.a = 0.9;
+
+        appendMeshTriangles(marker, mesh, T * pre_transform_matrix);
+        markers.markers.push_back(marker);
+    }
 }
 
+} // namespace
 
 int main(int argc, char** argv)
 {
-    ros::init(argc, argv, "mesh_publisher");
-    ros::NodeHandle n;
-    ros::NodeHandle nh_p("~");
+    rclcpp::init(argc, argv);
+    auto node = std::make_shared<rclcpp::Node>("mesh_publisher");
 
-    std::string map_frame;
-    std::string meshfile;
+    node->declare_parameter("map_file", std::string(""));
+    node->declare_parameter("map_frame", std::string("map"));
+    node->declare_parameter("publish_rate", 0.1);
+    node->declare_parameter("pre_transform", std::vector<double>{});
 
-    double publish_freq;
-    nh_p.param<std::string>("file", meshfile, "/home/amock/ros_workspaces/amcl_flex/avz_floor.ply");
-    nh_p.param<std::string>("frame", map_frame, "map");
-    nh_p.param<double>("publish_freq", publish_freq, 0.1);
+    const std::string map_file = node->get_parameter("map_file").as_string();
+    const std::string map_frame = node->get_parameter("map_frame").as_string();
+    const double publish_rate = node->get_parameter("publish_rate").as_double();
 
-    pre_transform = rm::Transform::Identity();
-    std::vector<double> transform_params;
-    if(nh_p.getParam("pre_transform", transform_params))
+    if(map_file.empty())
     {
-        if(transform_params.size() == 6)
-        {
-            pre_transform.t = rm::Vector{
-                    (float)transform_params[0], 
-                    (float)transform_params[1], 
-                    (float)transform_params[2]};
-            pre_transform.R = rm::EulerAngles{
-                    (float)transform_params[3],
-                    (float)transform_params[4],
-                    (float)transform_params[5]};
-        } else if(transform_params.size() == 7) {
-            pre_transform.t = rm::Vector{
-                    (float)transform_params[0],
-                    (float)transform_params[1],
-                    (float)transform_params[2]};
-            pre_transform.R = rm::Quaternion{
-                    (float)transform_params[3],
-                    (float)transform_params[4],
-                    (float)transform_params[5],
-                    (float)transform_params[6]
-            };
-        }
+        RCLCPP_ERROR(node->get_logger(), "map_file parameter is required.");
+        rclcpp::shutdown();
+        return 1;
     }
 
-
-    auto map = import_embree_map(meshfile);
-
-    auto meshes_ros = embreeToRos(map->scene);
-
-    std::unordered_map<unsigned int, mesh_msgs::MeshGeometryStamped> meshes_stamped;
-
-    for(auto elem : meshes_ros)
+    const auto transform_params = node->get_parameter("pre_transform").as_double_array();
+    if(transform_params.size() == 6)
     {
-        std::stringstream ss;
-        ss << "mesh/" << elem.first;
-        mesh_msgs::MeshGeometryStamped mesh_stamped;
-        mesh_stamped.mesh_geometry = elem.second;
-        mesh_stamped.header.frame_id = map_frame;
-        mesh_stamped.uuid = ss.str();
-        meshes_stamped[elem.first] = mesh_stamped;
+        pre_transform.t = rm::Vector{
+            (float)transform_params[0], (float)transform_params[1], (float)transform_params[2]};
+        pre_transform.R = rm::EulerAngles{
+            (float)transform_params[3], (float)transform_params[4], (float)transform_params[5]};
+    } else if(transform_params.size() == 7) {
+        pre_transform.t = rm::Vector{
+            (float)transform_params[0], (float)transform_params[1], (float)transform_params[2]};
+        pre_transform.R = rm::Quaternion{
+            (float)transform_params[3], (float)transform_params[4],
+            (float)transform_params[5], (float)transform_params[6]};
     }
 
-    std::unordered_map<unsigned int, std::shared_ptr<ros::Publisher> > mesh_pubs;
+    auto map = rm::import_embree_map(map_file);
 
-    for(auto elem : meshes_stamped)
+    auto pub = node->create_publisher<visualization_msgs::msg::MarkerArray>("mesh_markers", 1);
+
+    RCLCPP_INFO(node->get_logger(), "Publishing '%s' as a MarkerArray on 'mesh_markers' at %.3f Hz.",
+        map_file.c_str(), publish_rate);
+
+    rclcpp::Rate r(publish_rate);
+    while(rclcpp::ok())
     {
-        mesh_pubs[elem.first] = std::make_shared<ros::Publisher>(
-            nh_p.advertise<mesh_msgs::MeshGeometryStamped>(elem.second.uuid, 10)
-        );
-        std::cout << elem.first << " - " << elem.second.mesh_geometry.vertices.size() << "v, " 
-                    << elem.second.mesh_geometry.faces.size() << "f" << std::endl; 
-    }
+        std_msgs::msg::Header header;
+        header.stamp = node->get_clock()->now();
+        header.frame_id = map_frame;
 
-    ros::Rate r(publish_freq);
+        visualization_msgs::msg::MarkerArray markers;
+        collectMarkers(map->scene, rm::Matrix4x4::Identity(), header, markers);
+        pub->publish(markers);
 
-    std::cout << "Publishing Meshes (" << meshes_stamped.size() << ") at " << publish_freq << "hz ..." << std::endl;
-    while(ros::ok())
-    {
-        for(size_t i=0; i<meshes_stamped.size(); i++)
-        {
-            auto mesh = meshes_stamped[i];
-            auto pub = mesh_pubs[i];
-            mesh.header.stamp = ros::Time::now();
-            pub->publish(mesh);
-        }
-        
         r.sleep();
-        ros::spinOnce();
+        rclcpp::spin_some(node);
     }
 
+    rclcpp::shutdown();
     return 0;
 }

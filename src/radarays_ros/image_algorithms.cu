@@ -129,76 +129,7 @@ double perlin_noise_hilo(
     return p_low * p_perlin_low + (1.0 - p_low) * p_perlin_high;
 }
 
-__global__ 
-void fill_perlin_noise_kernel(
-    cv::cuda::PtrStepSzf img,
-    double scale)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (x <= img.cols - 1 && y <= img.rows - 1 && y >= 0 && x >= 0)
-    {
-        float p = perlin_noise(x  * scale, y * scale); // [-1.0,1.0]
-        p = (p + 1.0) / 2.0; // [0.0-1.0]
-        img(y, x) = p;
-    }
-}
-
-void fill_perlin_noise(
-    cv::cuda::GpuMat& img,
-    const double& scale)
-{
-    dim3 cthreads(16, 16);
-    dim3 cblocks(
-        static_cast<int>(std::ceil(img.size().width /
-            static_cast<double>(cthreads.x))),
-        static_cast<int>(std::ceil(img.size().height / 
-            static_cast<double>(cthreads.y))));
-
-    fill_perlin_noise_kernel<<<cblocks, cthreads>>>(img, scale);
-}
-
-__global__ 
-void fill_perlin_noise_hilo_kernel(
-    cv::cuda::PtrStepSzf img,
-    double off_x, double off_y,
-    double scale_low, double scale_high,
-    double p_low)
-{
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (x <= img.cols - 1 && y <= img.rows - 1 && y >= 0 && x >= 0)
-    {
-        float p = perlin_noise_hilo(
-            off_x, off_y,
-            x, y,
-            scale_low, scale_high,
-            p_low); // [-1.0,1.0]
-
-        img(y, x) = p;
-    }
-}
-
-void fill_perlin_noise_hilo(
-    cv::cuda::GpuMat& img,
-    double off_x, double off_y,
-    double scale_low, double scale_high,
-    double p_low)
-{
-    dim3 cthreads(16, 16);
-    dim3 cblocks(
-        static_cast<int>(std::ceil(img.size().width /
-            static_cast<double>(cthreads.x))),
-        static_cast<int>(std::ceil(img.size().height / 
-            static_cast<double>(cthreads.y))));
-
-    fill_perlin_noise_hilo_kernel<<<cblocks, cthreads>>>(
-        img, off_x, off_y, scale_low, scale_high, p_low);
-}
-
-__global__ 
+__global__
 void fill_perlin_noise_hilo_kernel(
     float* img,
     const float* max_vals,

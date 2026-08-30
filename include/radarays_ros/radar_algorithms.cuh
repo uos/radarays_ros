@@ -5,7 +5,6 @@
 #include <rmagine/types/MemoryCuda.hpp>
 #include <rmagine/types/Bundle.hpp>
 #include <rmagine/simulation/SimulationResults.hpp>
-#include <radarays_ros/RadarParams.h>
 
 namespace rm = rmagine;
 

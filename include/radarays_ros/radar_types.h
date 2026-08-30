@@ -26,6 +26,19 @@ struct Signal
     double strength;
 };
 
+// Plain POD mirror of msg::RadarMaterial (velocity/ambient/diffuse/specular
+// floats). The GPU physics kernels (radar_algorithms.cu) need this as raw,
+// trivially-copyable device memory (rm::Memory<RadarMaterial, VRAM_CUDA>) --
+// the generated ROS 2 message class isn't safe to memcpy to the GPU the way
+// ROS 1's plain-struct messages were.
+struct RadarMaterial
+{
+    float velocity;
+    float ambient;
+    float diffuse;
+    float specular;
+};
+
 struct DirectedWaveAttributes
 {
     // !!Not!! energy of wave ( E = h * v / l ). 

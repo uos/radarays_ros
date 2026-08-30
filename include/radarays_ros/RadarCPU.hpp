@@ -13,13 +13,13 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-class RadarCPU : public Radar 
+class RadarCPU : public Radar
 {
 public:
     using Base = Radar;
 
     RadarCPU(
-        std::shared_ptr<ros::NodeHandle> nh_p,
+        rclcpp::Node::SharedPtr node,
         std::shared_ptr<tf2_ros::Buffer> tf_buffer,
         std::shared_ptr<tf2_ros::TransformListener> tf_listener,
         std::string map_frame,
@@ -27,7 +27,7 @@ public:
         rm::EmbreeMapPtr map
     );
 
-    virtual sensor_msgs::ImagePtr simulate(ros::Time stamp);
+    virtual sensor_msgs::msg::Image::SharedPtr simulate(rclcpp::Time stamp);
 
 protected:
     std::unordered_map<unsigned int, rm::OnDnSimulatorEmbreePtr> m_sims;
@@ -36,6 +36,6 @@ protected:
 
 using RadarCPUPtr = std::shared_ptr<RadarCPU>;
 
-} // namespace radarays
+} // namespace radarays_ros
 
 #endif // RADARAYS_RADAR_CPU_HPP

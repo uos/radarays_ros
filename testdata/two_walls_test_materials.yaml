@@ -1,0 +1,23 @@
+# Materials file for testdata/two_walls_test.dae -- a synthetic 2-object
+# scene (see that file's header comment for geometry/obj_id details) built
+# to exercise radaray_opti.py tuning more than one material at once, which
+# no available real scene (single-mesh wall_test.ply, or a real MulRan map
+# with only 1 labeled material) can exercise. Same "index 0 = air" convention
+# as wall_test_materials.yaml.
+materials:
+  - velocity: 0.3
+    ambient: 0.0
+    diffuse: 0.0
+    specular: 0.0
+  - velocity: 0.1
+    ambient: 0.5
+    diffuse: 0.5
+    specular: 500.0
+  - velocity: 0.05
+    ambient: 0.2
+    diffuse: 0.8
+    specular: 50.0
+
+material_id_air: 0
+# obj_id 0 (WallNear) -> materials[1], obj_id 1 (WallFar) -> materials[2]
+object_materials: [1, 2]

@@ -1,0 +1,16 @@
+# Materials file for the wall_test.ply regression fixture (radarays_ros's
+# first-ever automated test -- see radarays_fixture_harness.py and
+# CMakeLists.txt). Same "index 0 = air, index 1 = real" convention used
+# throughout this migration's MulRan validation work.
+materials:
+  - velocity: 0.3
+    ambient: 0.0
+    diffuse: 0.0
+    specular: 0.0
+  - velocity: 0.1
+    ambient: 0.5
+    diffuse: 0.5
+    specular: 500.0
+
+material_id_air: 0
+object_materials: [1]

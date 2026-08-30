@@ -1,6 +1,6 @@
 #include "radarays_ros/RadarGPU.hpp"
 
-#include <cv_bridge/cv_bridge.h>
+#include <cv_bridge/cv_bridge.hpp>
 #include <omp.h>
 
 #include <radarays_ros/radar_algorithms.h>
@@ -17,67 +17,61 @@ namespace radarays_ros
 {
 
 RadarGPU::RadarGPU(
-    std::shared_ptr<ros::NodeHandle> nh_p,
+    rclcpp::Node::SharedPtr node,
     std::shared_ptr<tf2_ros::Buffer> tf_buffer,
     std::shared_ptr<tf2_ros::TransformListener> tf_listener,
     std::string map_frame,
     std::string sensor_frame,
     rm::OptixMapPtr map)
-:Base(nh_p, tf_buffer, tf_listener, map_frame, sensor_frame)
+:Base(node, tf_buffer, tf_listener, map_frame, sensor_frame)
 ,m_map(map)
 {
 
 }
 
-sensor_msgs::ImagePtr RadarGPU::simulate(
-    ros::Time stamp)
+sensor_msgs::msg::Image::SharedPtr RadarGPU::simulate(
+    rclcpp::Time stamp)
 {
-    sensor_msgs::ImagePtr msg;
-    
-    // 
-    if(m_polar_image.rows != m_cfg.n_cells)
+    sensor_msgs::msg::Image::SharedPtr msg;
+
+    //
+    if(m_polar_image.rows != m_cfg_n_cells)
     {
-        std::cout << "Resize canvas" << std::endl;
-        m_polar_image.resize(m_cfg.n_cells);
-        std::cout << "Resizing canvas - done." << std::endl;
+        std::cout << "[RadarGPU] Resize canvas to " << m_cfg_n_cells << std::endl;
+        m_polar_image.resize(m_cfg_n_cells);
+        std::cout << "[RadarGPU] Resizing canvas - done." << std::endl;
     }
 
 
     std::vector<float> denoising_weights;
     int denoising_mode = 0;
 
-    if(m_cfg.signal_denoising > 0)
+    if(m_cfg_signal_denoising > 0)
     {
-        // std::cout << "Signal Denoising: ";
-        if(m_cfg.signal_denoising == 1)
+        if(m_cfg_signal_denoising == 1)
         {
-            // std::cout << "Triangular";
-            denoising_mode = m_cfg.signal_denoising_triangular_mode * m_cfg.signal_denoising_triangular_width;
+            denoising_mode = m_cfg_signal_denoising_triangular_mode * m_cfg_signal_denoising_triangular_width;
             denoising_weights = make_denoiser_triangular(
-                m_cfg.signal_denoising_triangular_width,
-                denoising_mode
-            );
-            
-        } else if(m_cfg.signal_denoising == 2) {
-            // std::cout << "Gaussian";
-            denoising_mode = m_cfg.signal_denoising_gaussian_mode * m_cfg.signal_denoising_gaussian_width;
-            denoising_weights = make_denoiser_gaussian(
-                m_cfg.signal_denoising_gaussian_width,
+                m_cfg_signal_denoising_triangular_width,
                 denoising_mode
             );
 
-        } else if(m_cfg.signal_denoising == 3) {
-            // std::cout << "Maxwell Boltzmann";
-            denoising_mode = m_cfg.signal_denoising_mb_mode * m_cfg.signal_denoising_mb_width;
+        } else if(m_cfg_signal_denoising == 2) {
+            denoising_mode = m_cfg_signal_denoising_gaussian_mode * m_cfg_signal_denoising_gaussian_width;
+            denoising_weights = make_denoiser_gaussian(
+                m_cfg_signal_denoising_gaussian_width,
+                denoising_mode
+            );
+
+        } else if(m_cfg_signal_denoising == 3) {
+            denoising_mode = m_cfg_signal_denoising_mb_mode * m_cfg_signal_denoising_mb_width;
             denoising_weights = make_denoiser_maxwell_boltzmann(
-                m_cfg.signal_denoising_mb_width,
+                m_cfg_signal_denoising_mb_width,
                 denoising_mode
             );
         }
-        // std::cout << std::endl;
 
         // scale so that mode has weight 1
-        // if(false)
         if(denoising_weights.size() > 0)
         {
             double denoising_mode_val = denoising_weights[denoising_mode];
@@ -117,11 +111,17 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
     rm::Memory<RadarMaterial, rm::RAM_CUDA> materials2(m_params.materials.data.size());
     for(size_t i=0; i<m_params.materials.data.size(); i++)
     {
-        materials2[i] = m_params.materials.data[i];
+        // msg::RadarMaterial (the generated ROS 2 message class) isn't
+        // trivially-copyable to a GPU buffer, so copy field by field into
+        // the plain POD RadarMaterial the CUDA kernels actually need.
+        materials2[i].velocity = m_params.materials.data[i].velocity;
+        materials2[i].ambient  = m_params.materials.data[i].ambient;
+        materials2[i].diffuse  = m_params.materials.data[i].diffuse;
+        materials2[i].specular = m_params.materials.data[i].specular;
     }
     rm::Memory<RadarMaterial, rm::VRAM_CUDA> materials_gpu = materials2;
 
-    
+
     rm::Memory<float, rm::VRAM_CUDA> denoising_weights_gpu;
     if(denoising_weights.size())
     {
@@ -132,13 +132,12 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         }
         denoising_weights_gpu = denoising_weights2;
     }
-    
+
     // prepare radar model
 
-    size_t n_rays = n_angles * m_cfg.n_samples;
-    // std::cout << "Waves: " << n_rays << std::endl;
-    
-    
+    size_t n_rays = n_angles * m_cfg_n_samples;
+
+
     rm::OnDnModel waves;
     waves.range = m_radar_model.range;
     waves.dirs.resize(n_rays);
@@ -148,18 +147,14 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
     rm::Memory<DirectedWaveAttributes> wave_attributes(n_rays);
 
 
-    // auto samples = sample_cone
-
     rm::Vector front = {1.0, 0.0, 0.0};
     rm::Memory<rm::Vector> ray_dirs_local = sample_cone(
         front,
         m_params.model.beam_width,
         m_params.model.n_samples,
-        m_cfg.beam_sample_dist,
-        m_cfg.beam_sample_dist_normal_p_in_cone
+        m_cfg_beam_sample_dist,
+        m_cfg_beam_sample_dist_normal_p_in_cone
     );
-
-    // std::cout << "Filling Model" << std::endl;
 
     for(size_t angle_id=0; angle_id<n_angles; angle_id++)
     {
@@ -179,8 +174,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         }
 
     }
-
-    // std::cout << "Done filling model" << std::endl;
 
     // going to GPU
 
@@ -205,13 +198,13 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
 
     rm::Memory<DirectedWaveAttributes, rm::VRAM_CUDA> wave_attributes_gpu1
         = wave_attributes;
-    
+
     ResT results1;
     rm::resize_memory_bundle<rm::VRAM_CUDA>(
         results1, waves_gpu1.width, waves_gpu1.height, 1);
     rm::Memory<Signal, rm::VRAM_CUDA> signals1(waves_gpu1.size());
     rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask1(waves_gpu1.size());
-    
+
 
     // pass 2
     rm::OnDnModel_<rm::VRAM_CUDA> waves_gpu2;
@@ -248,7 +241,7 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         results3, waves_gpu3.width, waves_gpu3.height, 1);
     rm::Memory<Signal, rm::VRAM_CUDA> signals3(waves_gpu3.size());
     rm::Memory<uint8_t, rm::VRAM_CUDA> signal_mask3(waves_gpu3.size());
-    
+
     auto sim = std::make_shared<rm::OnDnSimulatorOptix>(m_map);
     sim->setTsb(rm::Transform::Identity());
     sim->preBuildProgram<ResT>();
@@ -268,26 +261,15 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
     // 1. Generate Signals
     sw();
     {
-        
-        // sw();
         sim->simulate(Tsms, results1);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
 
-        // sw();
         move_waves(
             waves_gpu1.origs,
             waves_gpu1.dirs,
             wave_attributes_gpu1,
-            results1.ranges, 
+            results1.ranges,
             results1.hits);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
 
-        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
-
-        // sw();
         signal_shader(
             materials_gpu,
             object_materials_gpu,
@@ -298,23 +280,19 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             results1.hits,
             results1.normals,
             results1.object_ids,
-            
+
             signals1
         );
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
-        
-        // sw();
+
         {
             auto lo = waves_gpu2.origs(0, waves_gpu1.origs.size());
             auto ld = waves_gpu2.dirs(0, waves_gpu1.dirs.size());
             auto la = wave_attributes_gpu2(0, wave_attributes_gpu1.size());
-            
+
             auto ro = waves_gpu2.origs(waves_gpu1.origs.size(), waves_gpu1.origs.size() * 2);
             auto rd = waves_gpu2.dirs(waves_gpu1.dirs.size(), waves_gpu1.dirs.size() * 2);
             auto ra = wave_attributes_gpu2(wave_attributes_gpu1.size(), wave_attributes_gpu1.size() * 2);
-            
+
             // FRESNEL SPLIT
             fresnel_split(
                 materials_gpu,
@@ -331,41 +309,20 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                 lo, ld, la,
                 ro, rd, ra
             );
-            // cudaDeviceSynchronize();
         }
-        // el = sw(); el_tot += el;
-        // std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
-        
-        // std::cout << "- total: " << el_tot << std::endl;
-        // std::cout << "Pass 2 - Propagating " << waves_gpu2.size() << " waves:" << std::endl;
 
-        // sw();
         sim->setModel(waves_gpu2);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
-        
-        // sw();
+
         sim->simulate(Tsms, results2);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
 
-        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
-
-        // sw();
         move_waves(
             waves_gpu2.origs,
             waves_gpu2.dirs,
             wave_attributes_gpu2,
-            results2.ranges, 
+            results2.ranges,
             results2.hits);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
 
-        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
-        
 
-        // sw();
         signal_shader(
             materials_gpu,
             object_materials_gpu,
@@ -376,23 +333,19 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             results2.hits,
             results2.normals,
             results2.object_ids,
-            
+
             signals2
         );
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- signal shader: " << el*1000.0 << "ms" << std::endl;
 
-        // sw();
         {
             auto lo = waves_gpu3.origs(0, waves_gpu2.origs.size());
             auto ld = waves_gpu3.dirs(0, waves_gpu2.dirs.size());
             auto la = wave_attributes_gpu3(0, wave_attributes_gpu2.size());
-            
+
             auto ro = waves_gpu3.origs(waves_gpu2.origs.size(), waves_gpu2.origs.size() * 2);
             auto rd = waves_gpu3.dirs(waves_gpu2.dirs.size(), waves_gpu2.dirs.size() * 2);
             auto ra = wave_attributes_gpu3(wave_attributes_gpu2.size(), wave_attributes_gpu2.size() * 2);
-            
+
             // FRESNEL SPLIT
             fresnel_split(
                 materials_gpu,
@@ -409,42 +362,19 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                 lo, ld, la,
                 ro, rd, ra
             );
-            // cudaDeviceSynchronize();
         }
-        
-        // el = sw(); el_tot += el;
-        // std::cout << "- fresnel split: " << el*1000.0 << "ms" << std::endl;
 
-        // std::cout << "- total: " << el_tot*1000.0 << "ms" << std::endl;
-
-        // std::cout << "Pass 3 - Propagating " << waves_gpu3.size() << " waves:" << std::endl;
-        
-
-        // sw();
         sim->setModel(waves_gpu3);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- update model: " << el*1000.0 << "ms" << std::endl;
 
-        // sw();
         sim->simulate(Tsms, results3);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
-        // std::cout << "- ray cast: " << el*1000.0 << "ms" << std::endl;
 
-        // sw();
         move_waves(
             waves_gpu3.origs,
             waves_gpu3.dirs,
             wave_attributes_gpu3,
-            results3.ranges, 
+            results3.ranges,
             results3.hits);
-        // cudaDeviceSynchronize();
-        // el = sw(); el_tot += el;
 
-        // std::cout << "- move: " << el*1000.0 << "ms" << std::endl;
-
-        // sw();
         signal_shader(
             materials_gpu,
             object_materials_gpu,
@@ -455,19 +385,12 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             results3.hits,
             results3.normals,
             results3.object_ids,
-            
+
             signals3
         );
         cudaDeviceSynchronize();
-
-        
-
-        
     }
     el1 = sw(); el_tot += el1;
-    
-    // std::cout << "RUNTIME" << std::endl;
-    // std::cout << "- Signal Gen: " << el << "s" << std::endl;
 
     bool use_unified_memory = true;
 
@@ -490,47 +413,45 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             draw_signals(img, max_vals, signal_counts,
                 n_angles, n_cells,
                 signals1, results1.hits,
-                m_cfg.n_samples * 1, 
-                m_cfg.signal_denoising,
+                m_cfg_n_samples * 1,
+                m_cfg_signal_denoising,
                 denoising_weights_gpu,
                 denoising_mode,
-                m_cfg.resolution
+                m_cfg_resolution
             );
 
             draw_signals(img, max_vals, signal_counts,
                 n_angles, n_cells,
                 signals2, results2.hits,
-                m_cfg.n_samples * 2, 
-                m_cfg.signal_denoising,
+                m_cfg_n_samples * 2,
+                m_cfg_signal_denoising,
                 denoising_weights_gpu,
                 denoising_mode,
-                m_cfg.resolution
+                m_cfg_resolution
             );
 
             draw_signals(img, max_vals, signal_counts,
                 n_angles, n_cells,
                 signals3, results3.hits,
-                m_cfg.n_samples * 4, 
-                m_cfg.signal_denoising,
+                m_cfg_n_samples * 4,
+                m_cfg_signal_denoising,
                 denoising_weights_gpu,
                 denoising_mode,
-                m_cfg.resolution
+                m_cfg_resolution
             );
             cudaDeviceSynchronize();
         }
         el2 = sw(); el_tot += el2;
-        // std::cout << "- Noise signal + system: " << el2 << "s" << std::endl;
-
 
         // 3. ambient noise
         sw();
-        if(m_cfg.ambient_noise)
+        if(m_cfg_ambient_noise)
         {
             std::random_device                      rand_dev;
             std::mt19937                            gen(rand_dev());
             std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
 
-            
+
             // apply noise
             // low freq perlin
             double scale_lo = 0.05;
@@ -550,9 +471,7 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             cudaDeviceSynchronize();
         }
         el3 = sw(); el_tot += el3;
-        // std::cout << "- Noise ambient: " << el << "s" << std::endl;
-        // std::cout << "- Total: " << el_tot << "s" << std::endl;
-        
+
         rm::Mem<float> max_vals_cpu = max_vals;
         rm::Mem<float> img_cpu = img;
         float max_signal = 120.0;
@@ -569,7 +488,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         }
         polar_img_f.convertTo(m_polar_image, CV_8UC1);
     } else {
-        // std::cout << "UNIFIED TEST" << std::endl;
         // USE UNIFIED MEMORY
         rm::Memory<float, rm::UNIFIED_CUDA> img(n_cells * n_angles);
         rm::Memory<float, rm::UNIFIED_CUDA> max_vals(n_angles);
@@ -588,51 +506,38 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         rm::Memory<Signal> signals_cpu3 = signals3;
         rm::Memory<uint8_t> hits_cpu3 = results3.hits;
 
-        // std::cout << "bla: " << signals_cpu1.size() << std::endl;
-
         cudaDeviceSynchronize();
-        // std::cout << "- buffer created" << std::endl;
 
         // 2. noise(signal+system) signals
         sw();
         {
-            size_t n_samples = m_cfg.n_samples;
-            
+            size_t n_samples = m_cfg_n_samples;
+
             #pragma omp parallel for
             for(size_t angle_id = 0; angle_id < n_angles; angle_id++)
             {
-                // std::cout << "- angle " << angle_id << std::endl; 
                 unsigned int img_offset = angle_id * n_cells;
 
                 float max_val = 0.0;
-                unsigned int signal_count = 0;    
+                unsigned int signal_count = 0;
 
                 // Draw signals to slice
                 // draw signals 1
                 for(size_t sample_id=0; sample_id < n_samples; sample_id++)
                 {
-                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
                     const unsigned int signal_id = sample_id * n_angles + angle_id;
 
-                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
-                    
-                    
                     if(hits_cpu1[signal_id])
                     {
-                        // std::cout << "Fetch signal" << std::endl;
                         auto signal = signals_cpu1[signal_id];
-                        // std::cout << "- done" << std::endl;
                         // wave speed in air (light speed) * t / 2
                         float half_time = signal.time / 2.0;
                         float signal_dist = 0.3 * half_time;
 
-                        int cell = static_cast<int>(signal_dist / m_cfg.resolution);
+                        int cell = static_cast<int>(signal_dist / m_cfg_resolution);
                         if(cell < n_cells)
                         {
-                            // std::cout << "Cell hit: " << cell << std::endl;
-                            // float signal_old = slice.at<float>(cell, 0);
-
-                            if(m_cfg.signal_denoising > 0)
+                            if(m_cfg_signal_denoising > 0)
                             {
                                 // signal denoising
                                 for(int vid = 0; vid < denoising_weights.size(); vid++)
@@ -640,7 +545,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     int glob_id = vid + cell - denoising_mode;
                                     if(glob_id > 0 && glob_id < n_cells)
                                     {
-                                        // TODO: check this
                                         const float old_val = img[img_offset + glob_id];
                                         const float new_val = old_val + signal.strength * denoising_weights[vid];
                                         img[img_offset + glob_id] = new_val;
@@ -652,8 +556,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     }
                                 }
                             } else {
-                                // read 
-                                // TODO: check this
                                 const float old_val = img[img_offset + cell];
                                 const float new_val = std::max(old_val, (float)signal.strength);
                                 img[img_offset + cell] = new_val;
@@ -671,31 +573,22 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
 
 
                 // Draw signals to slice
-                // draw signals 1
+                // draw signals 2
                 for(size_t sample_id=0; sample_id < n_samples * 2; sample_id++)
                 {
-                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
                     const unsigned int signal_id = sample_id * n_angles + angle_id;
 
-                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
-                    
-                    
                     if(hits_cpu2[signal_id])
                     {
-                        // std::cout << "Fetch signal" << std::endl;
                         auto signal = signals_cpu2[signal_id];
-                        // std::cout << "- done" << std::endl;
                         // wave speed in air (light speed) * t / 2
                         float half_time = signal.time / 2.0;
                         float signal_dist = 0.3 * half_time;
 
-                        int cell = static_cast<int>(signal_dist / m_cfg.resolution);
+                        int cell = static_cast<int>(signal_dist / m_cfg_resolution);
                         if(cell < n_cells)
                         {
-                            // std::cout << "Cell hit: " << cell << std::endl;
-                            // float signal_old = slice.at<float>(cell, 0);
-
-                            if(m_cfg.signal_denoising > 0)
+                            if(m_cfg_signal_denoising > 0)
                             {
                                 // signal denoising
                                 for(int vid = 0; vid < denoising_weights.size(); vid++)
@@ -703,7 +596,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     int glob_id = vid + cell - denoising_mode;
                                     if(glob_id > 0 && glob_id < n_cells)
                                     {
-                                        // TODO: check this
                                         const float old_val = img[img_offset + glob_id];
                                         const float new_val = old_val + signal.strength * denoising_weights[vid];
                                         img[img_offset + glob_id] = new_val;
@@ -715,8 +607,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     }
                                 }
                             } else {
-                                // read 
-                                // TODO: check this
                                 const float old_val = img[img_offset + cell];
                                 const float new_val = std::max(old_val, (float)signal.strength);
                                 img[img_offset + cell] = new_val;
@@ -734,31 +624,22 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
 
 
                 // Draw signals to slice
-                // draw signals 1
+                // draw signals 3
                 for(size_t sample_id=0; sample_id < n_samples * 4; sample_id++)
                 {
-                    // std::cout << "angle, sample: " << angle_id << "/" << n_angles <<  ", " << sample_id << "/" << n_samples << std::endl;
                     const unsigned int signal_id = sample_id * n_angles + angle_id;
 
-                    // std::cout << "signal: " << signal_id << "/" << signals_cpu1.size() << "-" << results1.hits.size() << std::endl;
-                    
-                    
                     if(hits_cpu3[signal_id])
                     {
-                        // std::cout << "Fetch signal" << std::endl;
                         auto signal = signals_cpu3[signal_id];
-                        // std::cout << "- done" << std::endl;
                         // wave speed in air (light speed) * t / 2
                         float half_time = signal.time / 2.0;
                         float signal_dist = 0.3 * half_time;
 
-                        int cell = static_cast<int>(signal_dist / m_cfg.resolution);
+                        int cell = static_cast<int>(signal_dist / m_cfg_resolution);
                         if(cell < n_cells)
                         {
-                            // std::cout << "Cell hit: " << cell << std::endl;
-                            // float signal_old = slice.at<float>(cell, 0);
-
-                            if(m_cfg.signal_denoising > 0)
+                            if(m_cfg_signal_denoising > 0)
                             {
                                 // signal denoising
                                 for(int vid = 0; vid < denoising_weights.size(); vid++)
@@ -766,7 +647,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     int glob_id = vid + cell - denoising_mode;
                                     if(glob_id > 0 && glob_id < n_cells)
                                     {
-                                        // TODO: check this
                                         const float old_val = img[img_offset + glob_id];
                                         const float new_val = old_val + signal.strength * denoising_weights[vid];
                                         img[img_offset + glob_id] = new_val;
@@ -778,8 +658,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                                     }
                                 }
                             } else {
-                                // read 
-                                // TODO: check this
                                 const float old_val = img[img_offset + cell];
                                 const float new_val = std::max(old_val, (float)signal.strength);
                                 img[img_offset + cell] = new_val;
@@ -798,22 +676,18 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
                 max_vals[angle_id] = max_val;
                 signal_counts[angle_id] = signal_count;
             }
-        
-            // cudaDeviceSynchronize();
-
         }
         el2 = sw(); el_tot += el2;
-        // std::cout << "- Noise signal + system: " << el << "s" << std::endl;
 
         // 3. ambient noise
         sw();
-        if(m_cfg.ambient_noise)
+        if(m_cfg_ambient_noise)
         {
             std::random_device                      rand_dev;
             std::mt19937                            gen(rand_dev());
             std::uniform_real_distribution<float>   dist_uni(0.0, 1.0);
 
-            
+
             // apply noise
             // low freq perlin
             double scale_lo = 0.05;
@@ -833,8 +707,6 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
             cudaDeviceSynchronize();
         }
         el3 = sw(); el_tot += el3;
-        // std::cout << "- Noise ambient: " << el3 << "s" << std::endl;
-        // std::cout << "- Total: " << el_tot << "s" << std::endl;
 
         float max_signal = 120.0;
         cv::Mat_<float> polar_img_f(n_cells, n_angles);
@@ -850,21 +722,19 @@ sensor_msgs::ImagePtr RadarGPU::simulate(
         polar_img_f.convertTo(m_polar_image, CV_8UC1);
 
     }
-    
+
     std::cout << std::fixed << std::setprecision(8) << el1/el_tot << ", " << el2/el_tot << ", " << el3/el_tot << ", " << el_tot << std::endl;
 
-
-
     msg = cv_bridge::CvImage(
-                std_msgs::Header(), 
+                std_msgs::msg::Header(),
                 "mono8",
                 m_polar_image).toImageMsg();
 
     msg->header.stamp = stamp;
     msg->header.frame_id = m_sensor_frame;
-    
+
     return msg;
 }
 
 
-} // namespace radarays
+} // namespace radarays_ros

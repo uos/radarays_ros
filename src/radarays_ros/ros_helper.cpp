@@ -1,65 +1,56 @@
 #include <radarays_ros/ros_helper.h>
 
-template<>
-radarays_ros::RadarMaterial loadFromRPC<radarays_ros::RadarMaterial>(
-    XmlRpc::XmlRpcValue material_xml)
+#include <yaml-cpp/yaml.h>
+#include <iostream>
+
+namespace
 {
-    radarays_ros::RadarMaterial ret;
-    if(material_xml.hasMember("velocity"))
-    {
-        ret.velocity = (double)material_xml["velocity"];
-    } else {
-        ret.velocity = 0.0;
-    }
 
-    if(material_xml.hasMember("ambient"))
-    {
-        ret.ambient = (double)material_xml["ambient"];
-    } else {
-        ret.ambient = 0.0;
-    }
-
-    if(material_xml.hasMember("diffuse"))
-    {
-        ret.diffuse = (double)material_xml["diffuse"];
-    } else {
-        ret.diffuse = 0.0;
-    }
-
-    if(material_xml.hasMember("specular"))
-    {
-        ret.specular = (double)material_xml["specular"];
-    } else {
-        ret.specular = 0.0;
-    }
-
+radarays_ros::msg::RadarMaterial materialFromYaml(const YAML::Node &node)
+{
+    radarays_ros::msg::RadarMaterial ret;
+    ret.velocity = node["velocity"] ? node["velocity"].as<float>() : 0.0f;
+    ret.ambient  = node["ambient"]  ? node["ambient"].as<float>()  : 0.0f;
+    ret.diffuse  = node["diffuse"]  ? node["diffuse"].as<float>()  : 0.0f;
+    ret.specular = node["specular"] ? node["specular"].as<float>() : 0.0f;
     return ret;
 }
 
+} // namespace
 
-radarays_ros::RadarMaterials loadRadarMaterialsFromParameterServer(
-    std::shared_ptr<ros::NodeHandle> nh)
+radarays_ros::msg::RadarMaterials loadRadarMaterialsFromFile(
+    const std::string &materials_file)
 {
-    radarays_ros::RadarMaterials ret;
-    
-    XmlRpc::XmlRpcValue materials_xml;
-    nh->getParam("materials", materials_xml);
+    radarays_ros::msg::RadarMaterials ret;
 
-    if(!materials_xml.valid())
+    if(materials_file.empty())
     {
-        std::cout << "Loaded XmlRpcValue is invalid" << std::endl;
+        return ret;
     }
 
-    if(materials_xml.getType() == XmlRpc::XmlRpcValue::TypeArray)
+    YAML::Node root;
+    try
     {
-        size_t n_materials = materials_xml.size();
+        root = YAML::LoadFile(materials_file);
+    }
+    catch(const std::exception &e)
+    {
+        std::cerr << "[radarays_ros] Failed to load materials_file '" << materials_file
+                  << "': " << e.what() << std::endl;
+        return ret;
+    }
 
-        for(size_t i=0; i<n_materials; i++)
-        {
-            auto material_xml = materials_xml[i];
-            auto material = loadFromRPC<radarays_ros::RadarMaterial>(material_xml);
-            ret.data.push_back(material);
-        }
+    YAML::Node materials_node = root["materials"];
+    if(!materials_node || !materials_node.IsSequence())
+    {
+        std::cerr << "[radarays_ros] materials_file '" << materials_file
+                  << "' has no 'materials' sequence." << std::endl;
+        return ret;
+    }
+
+    for(const auto &material_node : materials_node)
+    {
+        ret.data.push_back(materialFromYaml(material_node));
     }
 
     return ret;

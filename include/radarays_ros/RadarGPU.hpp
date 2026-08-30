@@ -12,13 +12,13 @@ namespace rm = rmagine;
 namespace radarays_ros
 {
 
-class RadarGPU : public Radar 
+class RadarGPU : public Radar
 {
 public:
     using Base = Radar;
 
     RadarGPU(
-        std::shared_ptr<ros::NodeHandle> nh_p,
+        rclcpp::Node::SharedPtr node,
         std::shared_ptr<tf2_ros::Buffer> tf_buffer,
         std::shared_ptr<tf2_ros::TransformListener> tf_listener,
         std::string map_frame,
@@ -26,8 +26,7 @@ public:
         rm::OptixMapPtr map
     );
 
-    virtual sensor_msgs::ImagePtr simulate(
-        ros::Time stamp);
+    virtual sensor_msgs::msg::Image::SharedPtr simulate(rclcpp::Time stamp);
 
 protected:
     std::unordered_map<unsigned int, rm::OnDnSimulatorOptixPtr> m_sims;
@@ -36,6 +35,6 @@ protected:
 
 using RadarGPUPtr = std::shared_ptr<RadarGPU>;
 
-} // namespace radarays
+} // namespace radarays_ros
 
-#endif // RADARAYS_RADAR_CPU_HPP
+#endif // RADARAYS_RADAR_GPU_HPP

@@ -1,0 +1,27 @@
+{
+  "world": "wall",
+  "capture_defaults": {
+    "duration_sec": 8.0
+  },
+  "reference_summary": {
+    "image": {
+      "description": "A thin wall (testdata/wall_test.ply), near face at x=5, sensor at origin height z=1. The wall is only visible from the subset of the 360-degree sweep's azimuth columns that actually point at it -- there is no single 'boresight column' the way a fixed-FOV sensor fixture would have. What's real and stable across the whole capture is the RANGE (row) of the wall's echo, summed across all columns: row_energy_peak_row stays at 118-119 for the vast majority of frames (occasional single-frame outliers -- startup transients or unrelated system load -- are tolerated via a majority-consensus check, see radarays_ros_fixture_harness.py). duration_sec/min_messages widened from 5.0s/15 to 8.0s/10 after a real self-hosted-runner run got only 13 messages in the tighter window -- more real margin, not just a retry.",
+      "row_energy_peak_row_expected_range": [100, 140],
+      "nonzero_count_expected_min": 100000,
+      "max_value_expected_min": 80
+    }
+  },
+  "expected": {
+    "image": {
+      "min_messages": 10,
+      "latest_nonzero_count_min": 100000,
+      "latest_max_value_min": 80,
+      "width": 400,
+      "row_energy_target_window": {
+        "row_min": 100,
+        "row_max": 140
+      },
+      "row_energy_peak_row_consensus_ratio_min": 0.95
+    }
+  }
+}

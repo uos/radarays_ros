@@ -1,0 +1,38 @@
+# Materials file for radaray_opti.py's automatic optimizer, used against
+# a real MulRan-reconstructed mesh (lvr2_reconstruct's single triangle
+# soup, see MIGRATION.md "MulRan dataset work" runbook step 2) -- NOT the
+# original dev/opti branch's config/mulran_kaist02.yaml, which assumes a
+# richly-labeled indoor Gazebo scene with distinct named objects
+# (DoorHallway1Glass-mesh, Bookshelf-mesh, etc.) that a plain point-cloud
+# reconstruction has no equivalent of: lvr2_reconstruct produces one
+# undifferentiated surface, so there is exactly one real (non-air)
+# material to tune here, not the original's separate wall(1)/glass(3)
+# split.
+#
+# object_materials is REQUIRED and non-empty here, not just documentation
+# -- RadarCPU.cpp falls back to material index 0 for any object id past
+# the end of object_materials (`obj_id < m_object_materials.size() ?
+# m_object_materials[obj_id] : 0`), and index 0 is materials[0], the
+# air-like entry below. An empty object_materials (as used for the
+# quick smoke-test materials.yaml elsewhere in this migration) means
+# EVERY hit silently resolves to the zeroed air material regardless of
+# what real material is defined at index 1 -- the reconstructed mesh's
+# single object (object id 0) must be explicitly mapped to index 1 for
+# the optimizer to have any actual effect on the simulated image.
+materials:
+  # index 0: air / "no reflection" -- required filler, never tuned
+  - velocity: 0.3
+    ambient: 0.0
+    diffuse: 0.0
+    specular: 0.0
+  # index 1: the one real material for the whole reconstructed surface
+  # -- these are just a starting point, radaray_opti.py tunes them
+  - velocity: 0.1
+    ambient: 0.5
+    diffuse: 0.5
+    specular: 500.0
+
+material_id_air: 0
+
+# lvr2_reconstruct's output is one undifferentiated mesh -> one object id
+object_materials: [1]
